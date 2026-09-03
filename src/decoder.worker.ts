@@ -40,7 +40,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   for (const column of FRAME_ID_COLUMNS) { const symbol = sample(column, HEADER_ROW); const value = symbol && classify(symbol, localPalette); if (value === null || value === undefined) return reject('frame ID failure'); id = (id * 4 + value) & 0xffff }
   const payload = new Uint8Array(BYTES_PER_FRAME); let position = 0
   for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) {
-    const color = sample(column, row); const value = color && classify(color, localPalette)
+    const color = sample(column, row); const value = color && classify(color, localPalette, false)
     if (value === null || value === undefined) { postDebug(`Payload failure at column ${column}, row ${row}`, anchors); return reject('payload failure', anchors) }
     payload[position >> 2] |= value << (6 - (position & 3) * 2); position += 1
   }
@@ -49,6 +49,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   // A repeat proves that the camera did not sample a refresh transition. Payload is
   // intentionally decoded only after the same frame ID appears twice consecutively.
   if (!pending || pending.id !== id) { pending = { id, payload }; postDebug(); return }
+  if (!sameBytes(pending.payload, payload)) { pending = { id, payload }; postDebug('Payload changed between consecutive reads', anchors); return }
   pending = null
   await accept(id, payload)
 }
@@ -77,6 +78,7 @@ async function tryComplete() {
 }
 function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl)); return rsPromise }
 function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }
+function sameBytes(a: Uint8Array, b: Uint8Array) { return a.length === b.length && a.every((value, index) => value === b[index]) }
 
 function findAnchors(p: Uint8ClampedArray, w: number, h: number): [Point, Point, Point, Point] | null {
   const candidates = components(p, w, h)
@@ -124,17 +126,19 @@ function chromaDistance(a: Rgb, b: Rgb) {
 }
 function validQuad(q: Point[]) { const cross = (a: Point, b: Point, c: Point) => (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x); const area = Math.abs(cross(q[0], q[1], q[2])) + Math.abs(cross(q[0], q[2], q[3])); return area > 900 && cross(q[0],q[1],q[2]) * cross(q[0],q[2],q[3]) > 0 }
 function sampleCell(p: Uint8ClampedArray, w: number, height: number, h: Homography, column: number, row: number): Rgb | null {
-  let r = 0, g = 0, b = 0, n = 0
+  const red: number[] = [], green: number[] = [], blue: number[] = []
   for (let sampleRow = 0; sampleRow < 3; sampleRow += 1) for (let sampleColumn = 0; sampleColumn < 3; sampleColumn += 1) {
     const point = project(h, column + .3 + sampleColumn * .2, row + .3 + sampleRow * .2)
     const x = Math.round(point.x), y = Math.round(point.y)
     if (x < 0 || y < 0 || x >= w || y >= height) continue
     const i = (y * w + x) * 4
-    r += p[i]; g += p[i + 1]; b += p[i + 2]; n += 1
+    red.push(p[i]); green.push(p[i + 1]); blue.push(p[i + 2])
   }
-  return n ? [r / n, g / n, b / n] : null
+  if (!red.length) return null
+  const middle = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)]
+  return [middle(red), middle(green), middle(blue)]
 }
 function distinct(palette: Rgb[]) { return palette.every((a, i) => palette.every((b, j) => i === j || chromaDistance(a,b) > .04)) }
-function classify(c: Rgb, palette: Rgb[]) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < .5 && second-best > .005 ? winner : null }
+function classify(c: Rgb, palette: Rgb[], requireSeparation = true) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < .5 && (!requireSeparation || second-best > .005) ? winner : null }
 function homography(source: Point[], destination: Point[]): Homography | null { const m:number[][]=[]; for(let i=0;i<4;i++){const {x,y}=source[i],{x:u,y:v}=destination[i];m.push([x,y,1,0,0,0,-u*x,-u*y,u],[0,0,0,x,y,1,-v*x,-v*y,v])} for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(m[r][c])>Math.abs(m[p][c]))p=r;if(Math.abs(m[p][c])<1e-8)return null;[m[c],m[p]]=[m[p],m[c]];const d=m[c][c];for(let k=c;k<9;k++)m[c][k]/=d;for(let r=0;r<8;r++)if(r!==c){const f=m[r][c];for(let k=c;k<9;k++)m[r][k]-=f*m[c][k]}} return m.map(row=>row[8]) as unknown as Homography }
 function project(h: Homography,x:number,y:number):Point { const d=h[6]*x+h[7]*y+1;return{x:(h[0]*x+h[1]*y+h[2])/d,y:(h[3]*x+h[4]*y+h[5])/d} }
