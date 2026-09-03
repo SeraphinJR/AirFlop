@@ -4,17 +4,17 @@ import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_so
 export type Rgb = readonly [number, number, number]
 export const OPTICAL_PALETTE: readonly Rgb[] = [[12, 18, 28], [244, 63, 94], [20, 184, 166], [250, 204, 21]]
 export const OPTICAL_PALETTE_CSS = OPTICAL_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
-export const ANCHOR_PALETTE: readonly Rgb[] = [[236, 72, 153], [34, 197, 94], [6, 182, 212], [234, 179, 8]]
+export const ANCHOR_PALETTE: readonly Rgb[] = [[255, 255, 255], [0, 0, 0], [255, 0, 0], [0, 0, 255]]
 export const ANCHOR_PALETTE_CSS = ANCHOR_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
-export const GRID_SIZE = 24
+export const GRID_SIZE = 16
 export const TRANSMISSION_FPS = 6
 export const FRAME_BLOCKS = GRID_SIZE * GRID_SIZE
-export const HEADER_ROW = 12
+export const HEADER_ROW = 8
 export const CALIBRATION_COLUMNS = [1, 2, 3, 4] as const
-export const FRAME_ID_COLUMNS = Array.from({ length: 16 }, (_, index) => index + 5)
-export const FRAME_CLOCK_COLUMN = 21
+export const FRAME_ID_COLUMNS = Array.from({ length: 8 }, (_, index) => index + 5)
+export const FRAME_CLOCK_COLUMN = 13
 export const FINDER_SIZE = 2
-export const FINDER_QUIET_SIZE = 4
+export const FINDER_QUIET_SIZE = 3
 export const FINDERS = {
   topLeft: { row: 1, column: 1, colour: 0 }, topRight: { row: 1, column: GRID_SIZE - 3, colour: 1 },
   bottomRight: { row: GRID_SIZE - 3, column: GRID_SIZE - 3, colour: 2 }, bottomLeft: { row: GRID_SIZE - 3, column: 1, colour: 3 },
@@ -28,7 +28,7 @@ export function isReservedCell(row: number, column: number) {
   return (row < FINDER_QUIET_SIZE || row >= GRID_SIZE - FINDER_QUIET_SIZE) && (column < FINDER_QUIET_SIZE || column >= GRID_SIZE - FINDER_QUIET_SIZE)
 }
 export const PAYLOAD_BLOCKS_PER_FRAME = Array.from({ length: FRAME_BLOCKS }, (_, index) => index).filter(index => !isReservedCell(Math.floor(index / GRID_SIZE), index % GRID_SIZE)).length
-export const BYTES_PER_FRAME = PAYLOAD_BLOCKS_PER_FRAME / 4
+export const BYTES_PER_FRAME = Math.floor(PAYLOAD_BLOCKS_PER_FRAME / 4)
 export const DATA_SHARDS_PER_GROUP = 4
 export const PARITY_SHARDS_PER_GROUP = 1
 let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
@@ -38,8 +38,8 @@ export function buildFrame(payloadIndices: number[], frameId: number): number[] 
   const frame = new Array<number>(FRAME_BLOCKS).fill(0); const cell = (row: number, column: number) => row * GRID_SIZE + column
   for (const finder of Object.values(FINDERS)) for (let row = finder.row; row < finder.row + FINDER_SIZE; row += 1) for (let column = finder.column; column < finder.column + FINDER_SIZE; column += 1) frame[cell(row, column)] = finder.colour
   CALIBRATION_COLUMNS.forEach((column, colour) => { frame[cell(HEADER_ROW, column)] = colour })
-  const unsignedFrameId = frameId >>> 0
-  FRAME_ID_COLUMNS.forEach((column, pairIndex) => { frame[cell(HEADER_ROW, column)] = (unsignedFrameId >>> (30 - pairIndex * 2)) & 3 }); frame[cell(HEADER_ROW, FRAME_CLOCK_COLUMN)] = unsignedFrameId & 1
+  const unsignedFrameId = frameId & 0xffff
+  FRAME_ID_COLUMNS.forEach((column, pairIndex) => { frame[cell(HEADER_ROW, column)] = (unsignedFrameId >>> (14 - pairIndex * 2)) & 3 }); frame[cell(HEADER_ROW, FRAME_CLOCK_COLUMN)] = unsignedFrameId & 1
   let payloadPosition = 0
   for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) frame[cell(row, column)] = payloadIndices[payloadPosition++] ?? 0
   return frame

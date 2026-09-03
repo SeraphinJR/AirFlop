@@ -20,6 +20,7 @@ export default function Page() {
   const [mode, setMode] = useState<'send' | 'catch'>('send')
   const [progress, setProgress] = useState(0)
   const [file, setFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState('')
   const [frames, setFrames] = useState<number[][]>([])
   const [totalFrames, setTotalFrames] = useState(0)
   const [countdown, setCountdown] = useState<number | null>(null)
@@ -80,6 +81,7 @@ export default function Page() {
 
   async function handleFileChange(nextFile: File | null) {
     setFile(nextFile)
+    setFileError('')
     setCountdown(null)
     setProgress(0)
     if (!nextFile) {
@@ -87,12 +89,18 @@ export default function Page() {
       setTotalFrames(0)
       return
     }
-    const data = new Uint8Array(await nextFile.arrayBuffer())
-    const extensionStart = nextFile.name.lastIndexOf('.')
-    const extension = extensionStart > 0 ? nextFile.name.slice(extensionStart + 1) : ''
-    const nextFrames = await buildTransmissionFrames(data, extension)
-    setFrames(nextFrames)
-    setTotalFrames(nextFrames.length)
+    try {
+      const data = new Uint8Array(await nextFile.arrayBuffer())
+      const extensionStart = nextFile.name.lastIndexOf('.')
+      const extension = extensionStart > 0 ? nextFile.name.slice(extensionStart + 1) : ''
+      const nextFrames = await buildTransmissionFrames(data, extension)
+      setFrames(nextFrames)
+      setTotalFrames(nextFrames.length)
+    } catch (error) {
+      setFrames([])
+      setTotalFrames(0)
+      setFileError(error instanceof Error ? error.message : 'Unable to prepare this file for transmission.')
+    }
   }
 
   function handleModeChange(nextMode: 'send' | 'catch') {
@@ -256,6 +264,7 @@ export default function Page() {
                       </p>
                     </div>
                   )}
+                  {fileError && <p className="mt-3 rounded-2xl border border-coral/30 bg-coral/10 p-3 text-sm font-semibold text-coral">{fileError}</p>}
                   <button
                     onClick={handleToggleBeam}
                     disabled={!file || !frames.length || countdown !== null}
@@ -405,10 +414,10 @@ export default function Page() {
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                     <div className="relative h-full w-full border-2 border-mint-dark/60">
                       {[
-                        ['top-left', 'left-[8.33%] top-[8.33%] bg-pink-500'],
-                        ['top-right', 'right-[8.33%] top-[8.33%] bg-green-500'],
-                        ['bottom-right', 'right-[8.33%] bottom-[8.33%] bg-cyan-500'],
-                        ['bottom-left', 'left-[8.33%] bottom-[8.33%] bg-yellow-400'],
+                        ['top-left', 'left-[12.5%] top-[12.5%] bg-white'],
+                        ['top-right', 'right-[12.5%] top-[12.5%] bg-black'],
+                        ['bottom-right', 'right-[12.5%] bottom-[12.5%] bg-red-500'],
+                        ['bottom-left', 'left-[12.5%] bottom-[12.5%] bg-blue-600'],
                       ].map(([label, className]) => (
                         <span key={label} className={`absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80 shadow-sm ${className}`} />
                       ))}

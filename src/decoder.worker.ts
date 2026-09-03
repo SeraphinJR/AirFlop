@@ -26,6 +26,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (pixels.length !== width * height * 4) return reject('invalid dimensions')
   const anchors = findAnchors(pixels, width, height)
   if (!anchors) return reject('no anchors')
+  postDebug('Anchors detected', anchors)
   if (!validQuad(anchors)) return reject('invalid quadrilateral')
   const h = homography(FINDER_CENTRES as unknown as Point[], anchors)
   if (!h) return reject('invalid quadrilateral')
@@ -36,7 +37,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   const clock = sample(FRAME_CLOCK_COLUMN, HEADER_ROW)
   if (!clock || classify(clock, localPalette) === null) return reject('ambiguous clock')
   let id = 0
-  for (const column of FRAME_ID_COLUMNS) { const symbol = sample(column, HEADER_ROW); const value = symbol && classify(symbol, localPalette); if (value === null || value === undefined) return reject('frame ID failure'); id = (id * 4 + value) >>> 0 }
+  for (const column of FRAME_ID_COLUMNS) { const symbol = sample(column, HEADER_ROW); const value = symbol && classify(symbol, localPalette); if (value === null || value === undefined) return reject('frame ID failure'); id = (id * 4 + value) & 0xffff }
   const payload = new Uint8Array(BYTES_PER_FRAME); let position = 0
   for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) {
     const color = sample(column, row); const value = color && classify(color, localPalette)
@@ -108,18 +109,8 @@ function components(p: Uint8ClampedArray, w: number, h: number, colour: number) 
   return result
 }
 function matches(c: Rgb, target: Rgb) {
-  const [hue, saturation, value] = hsv(c)
-  const [targetHue, targetSaturation] = hsv(target)
-  if (saturation < .48 || value < .16 || saturation < targetSaturation * .55) return false
-  const distance = Math.abs(hue - targetHue)
-  return Math.min(distance, 360 - distance) < 22
-}
-function hsv([r, g, b]: Rgb) {
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min
-  const value = max / 255
-  if (!delta) return [0, 0, value]
-  const hue = max === r ? (60 * ((g - b) / delta) + 360) % 360 : max === g ? 60 * ((b - r) / delta) + 120 : 60 * ((r - g) / delta) + 240
-  return [hue, delta / max, value]
+  const distance = Math.hypot(c[0] - target[0], c[1] - target[1], c[2] - target[2]) / 441.67
+  return distance < .22
 }
 function chromaDistance(a: Rgb, b: Rgb) {
   const an = Math.max(...a, 1), bn = Math.max(...b, 1)

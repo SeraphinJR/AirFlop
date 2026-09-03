@@ -55,7 +55,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
       setDebug(current => ({
         ...current,
         detectedFrames: message.detectedFrames ?? current.detectedFrames,
-        anchors: message.anchors ?? current.anchors,
+        anchors: message.type === 'DEBUG' ? message.anchors ?? [] : current.anchors,
         decoder: message.status
           ? `${message.status}${'rejectionSummary' in message && message.rejectionSummary ? ` · ${message.rejectionSummary}` : ''}`
           : (message.type ? `Received ${message.type}` : 'Received an unrecognised message'),
