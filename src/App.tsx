@@ -323,6 +323,7 @@ export default function Page() {
                       <div><dt className="inline text-foreground">Video: </dt><dd className="inline">{receiverDebug.metadata}</dd></div>
                       <div><dt className="inline text-foreground">Track: </dt><dd className="inline">{receiverDebug.track}</dd></div>
                       <div><dt className="inline text-foreground">Frames scanned: </dt><dd className="inline">{receiverDebug.framesScanned}</dd></div>
+                      <div><dt className="inline text-foreground">Detected frames: </dt><dd className="inline">{receiverDebug.detectedFrames}</dd></div>
                       <div><dt className="inline text-foreground">Decoder: </dt><dd className="inline">{receiverDebug.decoder}</dd></div>
                       {receiverDebug.error && <div className="text-coral"><dt className="inline text-foreground">Error: </dt><dd className="inline">{receiverDebug.error}</dd></div>}
                     </dl>

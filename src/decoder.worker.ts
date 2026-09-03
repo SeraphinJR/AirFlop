@@ -27,6 +27,7 @@ let manifest: Manifest | null = null
 let decoding = false
 let complete = false
 let inspectedFrames = 0
+let detectedFrames = 0
 let lastRejection = ''
 let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
 
@@ -37,6 +38,7 @@ self.onmessage = (event: MessageEvent<DecoderMessage>) => {
     decoding = false
     complete = false
     inspectedFrames = 0
+    detectedFrames = 0
     lastRejection = ''
     return
   }
@@ -47,7 +49,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (decoding || complete) return
   inspectedFrames += 1
   if (inspectedFrames % 30 === 0) {
-    self.postMessage({ type: 'DEBUG', status: lastRejection || `Analysed ${inspectedFrames} camera frames; searching for the grid` })
+    self.postMessage({ type: 'DEBUG', status: lastRejection || `Analysed ${inspectedFrames} camera frames; searching for the grid`, detectedFrames })
   }
   if (pixels.length !== width * height * 4) return reportRejection('Invalid camera frame dimensions')
 
@@ -93,6 +95,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
       symbolIndex += 1
     }
   }
+  detectedFrames += 1
 
   if (frameId === 0) {
     const nextManifest = parseManifest(payload)
@@ -129,6 +132,7 @@ function postProgress() {
     type: 'PROGRESS',
     received: receivedFrames.size,
     total: manifest.payloadFrameCount + 1,
+    detectedFrames,
   })
 }
 
@@ -273,8 +277,23 @@ function sampleRgb(pixels: Uint8ClampedArray, width: number, height: number, poi
   const x = Math.round(point.x)
   const y = Math.round(point.y)
   if (x < 0 || x >= width || y < 0 || y >= height) return null
-  const offset = (y * width + x) * 4
-  return [pixels[offset], pixels[offset + 1], pixels[offset + 2]]
+  let red = 0
+  let green = 0
+  let blue = 0
+  let samples = 0
+  for (let row = -2; row <= 2; row += 1) {
+    for (let column = -2; column <= 2; column += 1) {
+      const sampleX = x + column
+      const sampleY = y + row
+      if (sampleX < 0 || sampleX >= width || sampleY < 0 || sampleY >= height) continue
+      const offset = (sampleY * width + sampleX) * 4
+      red += pixels[offset]
+      green += pixels[offset + 1]
+      blue += pixels[offset + 2]
+      samples += 1
+    }
+  }
+  return samples ? [red / samples, green / samples, blue / samples] : null
 }
 
 function classify(color: Rgb, palette: Rgb[]) {

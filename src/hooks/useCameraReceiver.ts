@@ -10,6 +10,7 @@ type ReceiverDebug = {
   metadata: string
   track: string
   framesScanned: number
+  detectedFrames: number
   decoder: string
   error: string
 }
@@ -26,7 +27,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
   const scannedFramesRef = useRef(0)
   const lastFrameSentAtRef = useRef(0)
   const [debug, setDebug] = useState<ReceiverDebug>({
-    status: 'Camera is idle', metadata: 'Not available', track: 'Not available', framesScanned: 0, decoder: 'Waiting', error: '',
+    status: 'Camera is idle', metadata: 'Not available', track: 'Not available', framesScanned: 0, detectedFrames: 0, decoder: 'Waiting', error: '',
   })
 
   // We use a small offscreen canvas to avoid massive memory allocations
@@ -48,8 +49,12 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     const decoderWorker = new Worker(new URL('../decoder.worker.ts', import.meta.url), { type: 'module' })
     decoderWorker.onmessage = event => {
-      const message = event.data as { type?: string; status?: string }
-      setDebug(current => ({ ...current, decoder: message.status || (message.type ? `Received ${message.type}` : 'Received an unrecognised message') }))
+      const message = event.data as { type?: string; status?: string; detectedFrames?: number }
+      setDebug(current => ({
+        ...current,
+        detectedFrames: message.detectedFrames ?? current.detectedFrames,
+        decoder: message.status || (message.type ? `Received ${message.type}` : 'Received an unrecognised message'),
+      }))
       onWorkerMessageRef.current(event)
     }
     decoderWorker.onerror = event => {
@@ -70,7 +75,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     scannedFramesRef.current = 0
     lastFrameSentAtRef.current = 0
-    setDebug({ status: 'Requesting camera permission…', metadata: 'Waiting for video metadata', track: 'Waiting for stream', framesScanned: 0, decoder: 'Waiting', error: '' })
+    setDebug({ status: 'Requesting camera permission…', metadata: 'Waiting for video metadata', track: 'Waiting for stream', framesScanned: 0, detectedFrames: 0, decoder: 'Waiting', error: '' })
 
     try {
       const wakeLock = (navigator as WakeLockNavigator).wakeLock
