@@ -104,7 +104,27 @@ async function tryComplete() {
   const shardsPerGroup = DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP, groups = manifest.payloadFrameCount / shardsPerGroup
   for (let group = 0; group < groups; group += 1) { let count = 0; for (let shard = 0; shard < shardsPerGroup; shard += 1) if (receivedFrames.has(group * shardsPerGroup + shard + 1)) count += 1; if (count < DATA_SHARDS_PER_GROUP) return }
   decoding = true
-    try { const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), rs = await getRs(); for (let group = 0; group < groups; group += 1) { const shards = new Uint8Array(shardsPerGroup * BYTES_PER_FRAME), available: boolean[] = []; for (let shard = 0; shard < shardsPerGroup; shard += 1) { const frame = receivedFrames.get(group * shardsPerGroup + shard + 1); available.push(Boolean(frame)); if (frame) shards.set(frame, shard * BYTES_PER_FRAME) } if (rs.reconstruct(shards, DATA_SHARDS_PER_GROUP, PARITY_SHARDS_PER_GROUP, available) !== ReedSolomonErasure.RESULT_OK) { postDebug(`Reconstruction failed for group ${group + 1}; retrying`); return } output.set(shards.subarray(0, DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), group * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME) } complete = true; self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(new Blob([output.slice(0, manifest.fileSize)])), filename: manifest.extension ? `reconstructed.${manifest.extension.replace(/^\\.+/, '')}` : 'reconstructed' }) } finally { decoding = false }
+  try {
+    const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), rs = await getRs()
+    for (let group = 0; group < groups; group += 1) {
+      const shards = new Uint8Array(shardsPerGroup * BYTES_PER_FRAME), available: boolean[] = []
+      for (let shard = 0; shard < shardsPerGroup; shard += 1) {
+        const frame = receivedFrames.get(group * shardsPerGroup + shard + 1)
+        available.push(Boolean(frame))
+        if (frame) shards.set(frame, shard * BYTES_PER_FRAME)
+      }
+      if (rs.reconstruct(shards, DATA_SHARDS_PER_GROUP, PARITY_SHARDS_PER_GROUP, available) !== ReedSolomonErasure.RESULT_OK) {
+        throw new Error(`Reconstruction failed for group ${group + 1}.`)
+      }
+      output.set(shards.subarray(0, DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), group * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME)
+    }
+    complete = true
+    self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(new Blob([output.slice(0, manifest.fileSize)])), filename: manifest.extension ? `reconstructed.${manifest.extension.replace(/^\\.+/, '')}` : 'reconstructed' })
+  } catch (error) {
+    self.postMessage({ type: 'ERROR', error: error instanceof Error ? error.message : 'File reconstruction failed.' })
+  } finally {
+    decoding = false
+  }
 }
 function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl)); return rsPromise }
 function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }

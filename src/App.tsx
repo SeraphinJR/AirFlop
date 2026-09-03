@@ -26,20 +26,26 @@ export default function Page() {
   const [countdown, setCountdown] = useState<number | null>(null)
   const [receivedFrames, setReceivedFrames] = useState(0)
   const [transferComplete, setTransferComplete] = useState(false)
+  const [receiverError, setReceiverError] = useState('')
   const stopCaptureRef = useRef<() => void>(() => undefined)
   const { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid, showCalibration } = useOpticalTransmitter()
   const handleDecoderMessage = useCallback((event: MessageEvent<unknown>) => {
-    const message = event.data as { type?: string; totalFrames?: number; received?: number; total?: number; blobUrl?: string; filename?: string }
+    const message = event.data as { type?: string; totalFrames?: number; received?: number; total?: number; blobUrl?: string; filename?: string; error?: string }
     if (message.type === 'MANIFEST' && message.totalFrames !== undefined) {
       setTotalFrames(message.totalFrames)
       setReceivedFrames(0)
       setProgress(0)
       setTransferComplete(false)
+      setReceiverError('')
     }
     if (message.type === 'PROGRESS' && message.total !== undefined && message.received !== undefined) {
       setTotalFrames(message.total)
       setReceivedFrames(message.received)
       setProgress(Math.min(100, (message.received / message.total) * 100))
+      setReceiverError('')
+    }
+    if (message.type === 'ERROR') {
+      setReceiverError(message.error || 'File reconstruction failed.')
     }
     if (message.type === 'COMPLETE' && message.blobUrl) {
       stopCaptureRef.current()
@@ -135,6 +141,7 @@ export default function Page() {
     }
 
     setTransferComplete(false)
+    setReceiverError('')
     setReceivedFrames(0)
     setProgress(0)
     void startCapture()
@@ -151,6 +158,7 @@ export default function Page() {
     setCountdown(null)
     setReceivedFrames(0)
     setTransferComplete(false)
+    setReceiverError('')
   }
 
   return (
@@ -322,6 +330,7 @@ export default function Page() {
                           ? `Frames received: ${receivedFrames} / ${totalFrames}`
                           : 'Waiting for a signal...'}
                     </p>
+                    {receiverError && <p className="mt-2 rounded-xl border border-coral/30 bg-coral/10 p-2 font-mono text-xs font-bold text-coral">{receiverError}</p>}
                   </div>
                   <details className="mt-3 rounded-2xl border border-border bg-muted/40 px-4 py-3 text-xs">
                     <summary className="cursor-pointer font-mono font-bold text-foreground">
