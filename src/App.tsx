@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Camera,
@@ -23,10 +23,35 @@ export default function Page() {
   const [frames, setFrames] = useState<number[][]>([])
   const [totalFrames, setTotalFrames] = useState(0)
   const [countdown, setCountdown] = useState<number | null>(null)
+  const [receivedFrames, setReceivedFrames] = useState(0)
+  const [transferComplete, setTransferComplete] = useState(false)
   const { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid } = useOpticalTransmitter()
-  const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver(() => {
-  //Send this pixelData to a Web Worker.
-  });
+  const handleDecoderMessage = useCallback((event: MessageEvent<unknown>) => {
+    const message = event.data as { type?: string; totalFrames?: number; receivedFrames?: number; blobUrl?: string }
+    if (message.type === 'MANIFEST' && message.totalFrames !== undefined) {
+      setTotalFrames(message.totalFrames)
+      setReceivedFrames(0)
+      setProgress(0)
+      setTransferComplete(false)
+    }
+    if (message.type === 'PROGRESS' && message.totalFrames !== undefined && message.receivedFrames !== undefined) {
+      setReceivedFrames(message.receivedFrames)
+      setProgress(Math.min(100, (message.receivedFrames / message.totalFrames) * 100))
+    }
+    if (message.type === 'COMPLETE' && message.blobUrl) {
+      const download = document.createElement('a')
+      download.href = message.blobUrl
+      download.download = 'airflop-transfer'
+      download.hidden = true
+      document.body.append(download)
+      download.click()
+      download.remove()
+      window.setTimeout(() => URL.revokeObjectURL(message.blobUrl!), 1_000)
+      setProgress(100)
+      setTransferComplete(true)
+    }
+  }, [])
+  const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver(handleDecoderMessage);
   const isStreaming = isTransmitting || isCapturing;
 
   const expectedTime = totalFrames / 20
@@ -86,7 +111,10 @@ export default function Page() {
       return
     }
 
-    startCapture()
+    setTransferComplete(false)
+    setReceivedFrames(0)
+    setProgress(0)
+    void startCapture()
   }
 
   function handleReset() {
@@ -98,6 +126,8 @@ export default function Page() {
     setFrames([])
     setTotalFrames(0)
     setCountdown(null)
+    setReceivedFrames(0)
+    setTransferComplete(false)
   }
 
   return (
@@ -262,7 +292,11 @@ export default function Page() {
                       />
                     </div>
                     <p className="mt-3 font-mono text-xs text-muted-foreground">
-                      {progress ? `${progress}% rebuilt` : 'Waiting for a signal...'}
+                      {transferComplete
+                        ? 'Transfer Complete — your download has started.'
+                        : progress
+                          ? `${Math.round(progress)}% rebuilt · ${receivedFrames}/${totalFrames} frames`
+                          : 'Waiting for a signal...'}
                     </p>
                   </div>
                 </motion.div>

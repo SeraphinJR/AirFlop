@@ -3,6 +3,14 @@ type ReedSolomonExports = WebAssembly.Exports & {
   __wbindgen_malloc(size: number): number
   __wbindgen_free(pointer: number, size: number): void
   encode(pointer: number, length: number, dataShards: number, parityShards: number): number
+  reconstruct(
+    pointer: number,
+    length: number,
+    dataShards: number,
+    parityShards: number,
+    shardsAvailablePointer: number,
+    shardsAvailableLength: number,
+  ): number
 }
 
 export class ReedSolomonErasure {
@@ -43,6 +51,37 @@ export class ReedSolomonErasure {
     }
 
     __wbindgen_free(pointer, shards.length)
+    return result
+  }
+
+  reconstruct(
+    shards: Uint8Array,
+    dataShards: number,
+    parityShards: number,
+    shardsAvailable: boolean[],
+  ): number {
+    const { __wbindgen_malloc, __wbindgen_free, reconstruct } = this.wasmExports
+    const pointer = __wbindgen_malloc(shards.length)
+    const availabilityPointer = __wbindgen_malloc(shardsAvailable.length)
+    this.getUint8Memory().set(shards, pointer)
+    this.getUint8Memory().set(shardsAvailable.map(value => (value ? 1 : 0)), availabilityPointer)
+
+    const result = reconstruct(
+      pointer,
+      shards.length,
+      dataShards,
+      parityShards,
+      availabilityPointer,
+      shardsAvailable.length,
+    )
+
+    if (result === ReedSolomonErasure.RESULT_OK) {
+      const dataLength = (shards.length / (dataShards + parityShards)) * dataShards
+      shards.set(this.getUint8Memory().subarray(pointer, pointer + dataLength), 0)
+    }
+
+    __wbindgen_free(pointer, shards.length)
+    __wbindgen_free(availabilityPointer, shardsAvailable.length)
     return result
   }
 

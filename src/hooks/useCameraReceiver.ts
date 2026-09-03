@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 
-export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray) => void) {
+type DecoderWorkerMessage = MessageEvent<unknown>
+type WakeLockSentinelLike = { release: () => Promise<void> }
+type WakeLockNavigator = Navigator & {
+  wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> }
+}
+
+export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage) => void) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const animationRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
+  const decoderWorkerRef = useRef<Worker | null>(null)
+  const onWorkerMessageRef = useRef(onWorkerMessage)
+  const wakeLockRef = useRef<WakeLockSentinelLike | null>(null)
 
   // We use a small offscreen canvas to avoid massive memory allocations
   // 400x400 is enough resolution to read a 40x40 grid cleanly.
@@ -16,10 +25,32 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
     canvasRef.current.height = captureSize;
   }, []);
 
+  useEffect(() => {
+    onWorkerMessageRef.current = onWorkerMessage
+  }, [onWorkerMessage])
+
+  const ensureDecoderWorker = () => {
+    if (decoderWorkerRef.current) return decoderWorkerRef.current
+
+    const decoderWorker = new Worker(new URL('../decoder.worker.ts', import.meta.url), { type: 'module' })
+    decoderWorker.onmessage = event => onWorkerMessageRef.current(event)
+    decoderWorker.onerror = event => console.error('[Decoder] Worker error.', event)
+    decoderWorkerRef.current = decoderWorker
+    return decoderWorker
+  }
+
   const startCapture = async () => {
     if (!videoRef.current) {
       console.warn('[Camera] Cannot start: video element is not mounted.');
       return;
+    }
+
+    try {
+      const wakeLock = (navigator as WakeLockNavigator).wakeLock
+      if (wakeLock) wakeLockRef.current = await wakeLock.request('screen')
+    } catch (error) {
+      // A Wake Lock is a best-effort enhancement; camera capture still works without it.
+      console.warn('[Camera] Screen Wake Lock was not granted.', error)
     }
 
     try {
@@ -44,9 +75,14 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
         });
       } catch (fallbackError) {
         console.error('[Camera] Unable to access the camera.', fallbackError);
+        const wakeLock = wakeLockRef.current
+        wakeLockRef.current = null
+        if (wakeLock) void wakeLock.release().catch(() => undefined)
         return;
       }
     }
+
+    ensureDecoderWorker().postMessage({ type: 'RESET' })
 
     videoRef.current.srcObject = streamRef.current;
     videoRef.current.onloadedmetadata = () => {
@@ -70,6 +106,9 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
+    const wakeLock = wakeLockRef.current
+    wakeLockRef.current = null
+    if (wakeLock) void wakeLock.release().catch(error => console.warn('[Camera] Failed to release Wake Lock.', error))
   };
 
   const captureLoop = () => {
@@ -93,8 +132,11 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
       // Extract the raw pixel buffer (R,G,B,A for every pixel)
       const frameData = ctx.getImageData(0, 0, captureSize, captureSize);
       
-      // Fire it up to the orchestrator (which will hand it to the Web Worker)
-      onFrameCaptured(frameData.data);
+      // Transfer ownership so the main thread never copies the 400 x 400 RGBA buffer.
+      ensureDecoderWorker().postMessage(
+        { pixels: frameData.data, width: captureSize, height: captureSize },
+        [frameData.data.buffer],
+      )
     }
 
     animationRef.current = requestAnimationFrame(captureLoop);
@@ -105,6 +147,11 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       streamRef.current?.getTracks().forEach(track => track.stop());
+      const wakeLock = wakeLockRef.current
+      wakeLockRef.current = null
+      if (wakeLock) void wakeLock.release().catch(() => undefined)
+      decoderWorkerRef.current?.terminate()
+      decoderWorkerRef.current = null
     };
   }, []);
 
