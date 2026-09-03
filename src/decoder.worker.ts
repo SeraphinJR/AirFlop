@@ -24,6 +24,7 @@ const receivedFrames = new Map<number, Uint8Array>()
 let manifest: Manifest | null = null
 let decoding = false
 let complete = false
+let inspectedFrames = 0
 let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
 
 self.onmessage = (event: MessageEvent<DecoderMessage>) => {
@@ -32,6 +33,7 @@ self.onmessage = (event: MessageEvent<DecoderMessage>) => {
     manifest = null
     decoding = false
     complete = false
+    inspectedFrames = 0
     return
   }
   if ('pixels' in event.data) void processFrame(event.data)
@@ -39,6 +41,10 @@ self.onmessage = (event: MessageEvent<DecoderMessage>) => {
 
 async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage) {
   if (decoding || complete) return
+  inspectedFrames += 1
+  if (inspectedFrames % 30 === 0) {
+    self.postMessage({ type: 'DEBUG', status: `Analysed ${inspectedFrames} camera frames; searching for the grid` })
+  }
   if (pixels.length !== width * height * 4) return
 
   const anchors = findAnchors(pixels, width, height)

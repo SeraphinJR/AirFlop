@@ -54,7 +54,7 @@ export default function Page() {
       setTransferComplete(true)
     }
   }, [])
-  const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver(handleDecoderMessage);
+  const { videoRef, isCapturing, startCapture, stopCapture, debug: receiverDebug } = useCameraReceiver(handleDecoderMessage);
   const isStreaming = isTransmitting || isCapturing;
 
   useEffect(() => {
@@ -96,7 +96,14 @@ export default function Page() {
   }
 
   function handleModeChange(nextMode: 'send' | 'catch') {
-    if (nextMode === 'send') stopCapture()
+    if (nextMode === 'send') {
+      stopCapture()
+      setFile(null)
+      setFrames([])
+      setTotalFrames(0)
+      setCountdown(null)
+      setProgress(0)
+    }
     setMode(nextMode)
   }
 
@@ -307,6 +314,19 @@ export default function Page() {
                           : 'Waiting for a signal...'}
                     </p>
                   </div>
+                  <details className="mt-3 rounded-2xl border border-border bg-muted/40 px-4 py-3 text-xs">
+                    <summary className="cursor-pointer font-mono font-bold text-foreground">
+                      Receiver diagnostics (phone-friendly)
+                    </summary>
+                    <dl className="mt-3 grid gap-2 break-words font-mono text-[11px] leading-5 text-muted-foreground">
+                      <div><dt className="inline text-foreground">Status: </dt><dd className="inline">{receiverDebug.status}</dd></div>
+                      <div><dt className="inline text-foreground">Video: </dt><dd className="inline">{receiverDebug.metadata}</dd></div>
+                      <div><dt className="inline text-foreground">Track: </dt><dd className="inline">{receiverDebug.track}</dd></div>
+                      <div><dt className="inline text-foreground">Frames scanned: </dt><dd className="inline">{receiverDebug.framesScanned}</dd></div>
+                      <div><dt className="inline text-foreground">Decoder: </dt><dd className="inline">{receiverDebug.decoder}</dd></div>
+                      {receiverDebug.error && <div className="text-coral"><dt className="inline text-foreground">Error: </dt><dd className="inline">{receiverDebug.error}</dd></div>}
+                    </dl>
+                  </details>
                 </motion.div>
               )}
             </AnimatePresence>

@@ -5,6 +5,14 @@ type WakeLockSentinelLike = { release: () => Promise<void> }
 type WakeLockNavigator = Navigator & {
   wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> }
 }
+type ReceiverDebug = {
+  status: string
+  metadata: string
+  track: string
+  framesScanned: number
+  decoder: string
+  error: string
+}
 
 export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage) => void) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -14,6 +22,11 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
   const decoderWorkerRef = useRef<Worker | null>(null)
   const onWorkerMessageRef = useRef(onWorkerMessage)
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null)
+  const scanningRef = useRef(false)
+  const scannedFramesRef = useRef(0)
+  const [debug, setDebug] = useState<ReceiverDebug>({
+    status: 'Camera is idle', metadata: 'Not available', track: 'Not available', framesScanned: 0, decoder: 'Waiting', error: '',
+  })
 
   // We use a small offscreen canvas to avoid massive memory allocations
   // 400x400 is enough resolution to read a 40x40 grid cleanly.
@@ -33,8 +46,16 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     if (decoderWorkerRef.current) return decoderWorkerRef.current
 
     const decoderWorker = new Worker(new URL('../decoder.worker.ts', import.meta.url), { type: 'module' })
-    decoderWorker.onmessage = event => onWorkerMessageRef.current(event)
-    decoderWorker.onerror = event => console.error('[Decoder] Worker error.', event)
+    decoderWorker.onmessage = event => {
+      const message = event.data as { type?: string; status?: string }
+      setDebug(current => ({ ...current, decoder: message.status || (message.type ? `Received ${message.type}` : 'Received an unrecognised message') }))
+      onWorkerMessageRef.current(event)
+    }
+    decoderWorker.onerror = event => {
+      const error = event.message || 'Decoder worker failed.'
+      console.error('[Decoder] Worker error.', event)
+      setDebug(current => ({ ...current, status: 'Decoder error', error }))
+    }
     decoderWorkerRef.current = decoderWorker
     return decoderWorker
   }
@@ -42,8 +63,12 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
   const startCapture = async () => {
     if (!videoRef.current) {
       console.warn('[Camera] Cannot start: video element is not mounted.');
+      setDebug(current => ({ ...current, status: 'Camera element unavailable', error: 'The camera preview is not mounted.' }))
       return;
     }
+
+    scannedFramesRef.current = 0
+    setDebug({ status: 'Requesting camera permission…', metadata: 'Waiting for video metadata', track: 'Waiting for stream', framesScanned: 0, decoder: 'Waiting', error: '' })
 
     try {
       const wakeLock = (navigator as WakeLockNavigator).wakeLock
@@ -75,6 +100,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
         });
       } catch (fallbackError) {
         console.error('[Camera] Unable to access the camera.', fallbackError);
+        setDebug(current => ({ ...current, status: 'Camera unavailable', error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) }))
         const wakeLock = wakeLockRef.current
         wakeLockRef.current = null
         if (wakeLock) void wakeLock.release().catch(() => undefined)
@@ -85,22 +111,36 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     ensureDecoderWorker().postMessage({ type: 'RESET' })
 
     videoRef.current.srcObject = streamRef.current;
+    const startScanning = () => {
+      const video = videoRef.current
+      if (!video || !streamRef.current || !video.videoWidth || !video.videoHeight || scanningRef.current) return
+      scanningRef.current = true
+      setIsCapturing(true)
+      setDebug(current => ({ ...current, status: 'Scanning optical frames' }))
+      captureLoop()
+    }
     videoRef.current.onloadedmetadata = () => {
+      const video = videoRef.current
       console.info('[Camera] Video metadata ready.', {
-        width: videoRef.current?.videoWidth,
-        height: videoRef.current?.videoHeight,
+        width: video?.videoWidth,
+        height: video?.videoHeight,
       });
+      setDebug(current => ({ ...current, metadata: `${video?.videoWidth ?? 0} × ${video?.videoHeight ?? 0}px`, status: 'Video metadata received' }))
+      startScanning()
     };
     await videoRef.current.play();
     console.info('[Camera] Video playback started.');
-    setIsCapturing(true);
-
-    // Start the extraction loop
-    captureLoop();
+    // Some mobile browsers expose dimensions only after play(), while others fire
+    // loadedmetadata first. This covers both without drawing invalid 0 × 0 frames.
+    startScanning()
+    const track = streamRef.current.getVideoTracks()[0]
+    const settings = track?.getSettings()
+    setDebug(current => ({ ...current, track: track ? `${track.label || 'Rear camera'} · ${settings?.width ?? '?'} × ${settings?.height ?? '?'} @ ${settings?.frameRate ?? '?'}fps` : 'No video track' }))
   };
 
   const stopCapture = () => {
     setIsCapturing(false);
+    scanningRef.current = false
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
@@ -110,10 +150,11 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     const wakeLock = wakeLockRef.current
     wakeLockRef.current = null
     if (wakeLock) void wakeLock.release().catch(error => console.warn('[Camera] Failed to release Wake Lock.', error))
+    setDebug(current => ({ ...current, status: 'Camera stopped' }))
   };
 
   const captureLoop = () => {
-    if (!streamRef.current || !videoRef.current) return;
+    if (!scanningRef.current || !streamRef.current || !videoRef.current) return;
 
     const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
     if (ctx) {
@@ -138,6 +179,10 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
         { pixels: frameData.data, width: captureSize, height: captureSize },
         [frameData.data.buffer],
       )
+      scannedFramesRef.current += 1
+      if (scannedFramesRef.current % 15 === 0) {
+        setDebug(current => ({ ...current, framesScanned: scannedFramesRef.current }))
+      }
     }
 
     animationRef.current = requestAnimationFrame(captureLoop);
@@ -156,5 +201,5 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     };
   }, []);
 
-  return { videoRef, isCapturing, startCapture, stopCapture };
+  return { videoRef, isCapturing, startCapture, stopCapture, debug };
 }
