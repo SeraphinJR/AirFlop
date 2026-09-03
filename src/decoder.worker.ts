@@ -226,7 +226,19 @@ function findAnchors(pixels: Uint8ClampedArray, width: number, height: number): 
     if (!best || bestScore > 800) return null
     anchors.push(best)
   }
-  return anchors as [Point, Point, Point, Point]
+
+  // The edge-biased search returns the outside corner of each marker. The
+  // homography needs the marker centers, otherwise every sample is shifted by
+  // about half a cell and lands on a boundary.
+  const [topLeft, topRight, bottomRight, bottomLeft] = anchors
+  const cellX = (topRight.x - topLeft.x) / (GRID_SIZE - 1)
+  const cellY = (bottomLeft.y - topLeft.y) / (GRID_SIZE - 1)
+  return [
+    { x: topLeft.x + cellX / 2, y: topLeft.y + cellY / 2 },
+    { x: topRight.x - cellX / 2, y: topRight.y + cellY / 2 },
+    { x: bottomRight.x - cellX / 2, y: bottomRight.y - cellY / 2 },
+    { x: bottomLeft.x + cellX / 2, y: bottomLeft.y - cellY / 2 },
+  ]
 }
 
 function createHomography(source: Point[], destination: Point[]): Homography | null {
