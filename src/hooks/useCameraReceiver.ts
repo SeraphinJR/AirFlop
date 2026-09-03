@@ -17,30 +17,46 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
   }, []);
 
   const startCapture = async () => {
-    if (!videoRef.current) return;
+    if (!videoRef.current) {
+      console.warn('[Camera] Cannot start: video element is not mounted.');
+      return;
+    }
 
     try {
+      console.info('[Camera] Requesting rear camera access...');
       // Attempt 1: Try to lock manual focus (often rejected by Android Chrome)
       streamRef.current = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment', // Force rear camera
           width: { ideal: 1920 },
           height: { ideal: 1080 },
-          advanced: [{ focusMode: 'manual' } as any] 
+          advanced: [{ focusMode: 'manual' } as MediaTrackConstraintSet & { focusMode: string }]
         },
         audio: false,
       });
     } catch (err) {
-      console.warn("Manual focus rejected, falling back to standard constraints...", err);
+      console.warn('[Camera] Manual focus rejected; falling back to standard constraints.', err);
       // Attempt 2: Standard rear camera
-      streamRef.current = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
-        audio: false,
-      });
+      try {
+        streamRef.current = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        });
+      } catch (fallbackError) {
+        console.error('[Camera] Unable to access the camera.', fallbackError);
+        return;
+      }
     }
 
     videoRef.current.srcObject = streamRef.current;
+    videoRef.current.onloadedmetadata = () => {
+      console.info('[Camera] Video metadata ready.', {
+        width: videoRef.current?.videoWidth,
+        height: videoRef.current?.videoHeight,
+      });
+    };
     await videoRef.current.play();
+    console.info('[Camera] Video playback started.');
     setIsCapturing(true);
 
     // Start the extraction loop
@@ -57,7 +73,7 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
   };
 
   const captureLoop = () => {
-    if (!isCapturing || !videoRef.current) return;
+    if (!streamRef.current || !videoRef.current) return;
 
     const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
     if (ctx) {
@@ -86,8 +102,11 @@ export function useCameraReceiver(onFrameCaptured: (imageData: Uint8ClampedArray
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => stopCapture();
-  }, [isCapturing]);
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      streamRef.current?.getTracks().forEach(track => track.stop());
+    };
+  }, []);
 
   return { videoRef, isCapturing, startCapture, stopCapture };
 }

@@ -21,7 +21,7 @@ export default function Page() {
   const [progress, setProgress] = useState(0)
   const [file, setFile] = useState<File | null>(null)
   const { canvasRef, isTransmitting, startTransmission, stopTransmission } = useOpticalTransmitter()
-  const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver((pixelData) => {
+  const { videoRef, isCapturing, startCapture } = useCameraReceiver(() => {
   //Send this pixelData to a Web Worker.
   });
 
@@ -50,7 +50,7 @@ export default function Page() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-6 md:px-8">
+      <header className="mx-auto flex w-full max-w-[90rem] items-center justify-between gap-4 px-5 py-6 md:px-8 lg:px-12">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
             <Lightbulb size={19} />
@@ -67,7 +67,7 @@ export default function Page() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-5 pb-14 md:px-8">
+      <section className="mx-auto max-w-[90rem] px-5 pb-14 md:px-8 lg:px-12">
         <div
           className="mx-auto flex max-w-fit items-center gap-1 rounded-2xl border border-border bg-card p-1.5 shadow-sm"
           role="tablist"
@@ -99,7 +99,7 @@ export default function Page() {
           </button>
         </div>
 
-        <div className="mt-12 grid items-center gap-12 lg:grid-cols-[0.85fr_1.15fr] lg:gap-20">
+        <div className="mt-12 grid items-center gap-12 lg:grid-cols-[1fr_1.5fr] lg:gap-20">
           <div>
             <AnimatePresence mode="wait">
               {mode === 'send' ? (
@@ -179,45 +179,13 @@ export default function Page() {
                     Point your camera at the sender's grid and let Bridge rebuild
                     your file, one colorful frame at a time.
                   </p>
-                  <div className="mt-8 rounded-3xl border border-border bg-card p-4 shadow-sm">
-                    <div className="flex items-center gap-3 rounded-2xl bg-muted p-4">
-                      <Camera className="text-mint-dark" size={22} />
-                      {/* Live Camera Viewport */}
-                      <div className="relative mt-4 aspect-square w-full overflow-hidden rounded-2xl bg-black">
-                        <video
-                          ref={videoRef}
-                          autoPlay
-                          playsInline
-                          muted
-                          className="h-full w-full object-cover"
-                          style={{ display: isCapturing ? 'block' : 'none' }}
-                        />
-                        
-                        {!isCapturing && (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <button 
-                              onClick={startCapture}
-                              className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground"
-                            >
-                              Open Camera
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Crosshair Overlay to guide the user */}
-                        {isCapturing && (
-                          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                            <div className="h-3/4 w-3/4 border-2 border-mint-dark/50" />
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold">Camera access ready</p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          Aim at the color grid
-                        </p>
-                      </div>
-                    </div>
+                  <button
+                    onClick={startCapture}
+                    className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-bold text-primary-foreground shadow-[0_5px_0_hsl(var(--primary-shadow))] transition-all hover:-translate-y-0.5 active:translate-y-1"
+                  >
+                    <Camera size={17} /> Open Camera
+                  </button>
+                  <div className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-sm">
                     <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
                       <motion.div
                         className="h-full rounded-full bg-mint-dark"
@@ -262,19 +230,41 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="relative aspect-square w-full rounded-2xl border-4 border-primary/10 bg-black overflow-hidden">
-              <canvas
-                ref={canvasRef}
-                width={800}
-                height={800}
-                className="absolute inset-0 h-full w-full object-contain"
-                style={{ display: isTransmitting ? 'block' : 'none' }}
-              />
-
-              {!isTransmitting && (
-                <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50 font-mono text-sm">
-                  GRID STANDBY
-                </div>
+            <div className="relative aspect-square w-full overflow-hidden rounded-2xl border-4 border-primary/10 bg-black">
+              {mode === 'send' ? (
+                <>
+                  <canvas
+                    ref={canvasRef}
+                    width={800}
+                    height={800}
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                  {!isTransmitting && (
+                    <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50 font-mono text-sm">
+                      GRID STANDBY
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={`h-full w-full rounded-2xl object-cover transition-opacity duration-300 ${
+                      isCapturing ? 'opacity-100' : 'pointer-events-none opacity-0'
+                    }`}
+                  />
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
+                    <div className="h-full w-full rounded-xl border-2 border-mint-dark/60" />
+                  </div>
+                  {!isCapturing && (
+                    <div className="absolute inset-0 flex items-center justify-center font-mono text-sm text-muted-foreground/70">
+                      CAMERA STANDBY
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
