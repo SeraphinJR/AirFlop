@@ -2,7 +2,7 @@ import { ReedSolomonErasure } from './reedSolomon'
 import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
 
 export type Rgb = readonly [number, number, number]
-export const OPTICAL_PALETTE: readonly Rgb[] = [[88, 98, 110], [244, 63, 94], [20, 184, 166], [250, 204, 21]]
+export const OPTICAL_PALETTE: readonly Rgb[] = [[139, 92, 246], [244, 63, 94], [20, 184, 166], [250, 204, 21]]
 export const OPTICAL_PALETTE_CSS = OPTICAL_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
 export const ANCHOR_PALETTE: readonly Rgb[] = [[255, 255, 255]]
 export const ANCHOR_PALETTE_CSS = ANCHOR_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
