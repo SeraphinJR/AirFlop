@@ -4,6 +4,8 @@ import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_so
 export type Rgb = readonly [number, number, number]
 export const OPTICAL_PALETTE: readonly Rgb[] = [[12, 18, 28], [244, 63, 94], [20, 184, 166], [250, 204, 21]]
 export const OPTICAL_PALETTE_CSS = OPTICAL_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
+export const ANCHOR_PALETTE: readonly Rgb[] = [[37, 99, 235], [217, 70, 239], [249, 115, 22], [132, 204, 22]]
+export const ANCHOR_PALETTE_CSS = ANCHOR_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
 export const GRID_SIZE = 24
 export const TRANSMISSION_FPS = 6
 export const FRAME_BLOCKS = GRID_SIZE * GRID_SIZE
@@ -14,8 +16,8 @@ export const FRAME_CLOCK_COLUMN = 21
 export const FINDER_SIZE = 2
 export const FINDER_QUIET_SIZE = 4
 export const FINDERS = {
-  topLeft: { row: 1, column: 1, colour: 1 }, topRight: { row: 1, column: GRID_SIZE - 3, colour: 2 },
-  bottomRight: { row: GRID_SIZE - 3, column: GRID_SIZE - 3, colour: 3 }, bottomLeft: { row: GRID_SIZE - 3, column: 1, colour: 1 },
+  topLeft: { row: 1, column: 1, colour: 0 }, topRight: { row: 1, column: GRID_SIZE - 3, colour: 1 },
+  bottomRight: { row: GRID_SIZE - 3, column: GRID_SIZE - 3, colour: 2 }, bottomLeft: { row: GRID_SIZE - 3, column: 1, colour: 3 },
 } as const
 export const FINDER_CENTRES = [
   { x: FINDERS.topLeft.column + FINDER_SIZE / 2, y: FINDERS.topLeft.row + FINDER_SIZE / 2 }, { x: FINDERS.topRight.column + FINDER_SIZE / 2, y: FINDERS.topRight.row + FINDER_SIZE / 2 },

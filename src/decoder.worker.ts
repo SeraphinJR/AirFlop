@@ -1,6 +1,6 @@
 import { ReedSolomonErasure } from './lib/reedSolomon'
 import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
-import { BYTES_PER_FRAME, CALIBRATION_COLUMNS, DATA_SHARDS_PER_GROUP, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, OPTICAL_PALETTE, PARITY_SHARDS_PER_GROUP, type Rgb } from './lib/opticalFrame'
+import { ANCHOR_PALETTE, BYTES_PER_FRAME, CALIBRATION_COLUMNS, DATA_SHARDS_PER_GROUP, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, PARITY_SHARDS_PER_GROUP, type Rgb } from './lib/opticalFrame'
 
 type Point = { x: number; y: number }
 type Homography = readonly [number, number, number, number, number, number, number, number]
@@ -78,16 +78,31 @@ function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolom
 function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }
 
 function findAnchors(p: Uint8ClampedArray, w: number, h: number): [Point, Point, Point, Point] | null {
-  const blobs = [1, 2, 3].map(colour => components(p, w, h, colour))
+  const blobs = [0, 1, 2, 3].map(colour => components(p, w, h, colour))
   const red = blobs[0]; const teal = blobs[1]; const yellow = blobs[2]
-  if (red.length < 2 || !teal.length || !yellow.length) return null
+  const bottomLeft = blobs[3]
+  if (!red.length || !teal.length || !yellow.length || !bottomLeft.length) return null
   let best: [Point, Point, Point, Point] | null = null, bestScore = -Infinity
-  for (const tl of red) for (const bl of red) if (tl !== bl) for (const tr of teal) for (const br of yellow) { const q: [Point, Point, Point, Point] = [tl, tr, br, bl]; if (!validQuad(q)) continue; const score = tl.area + tr.area + br.area + bl.area; if (score > bestScore) { bestScore = score; best = q } }
+  for (const tl of red) for (const bl of bottomLeft) for (const tr of teal) for (const br of yellow) {
+    const q: [Point, Point, Point, Point] = [tl, tr, br, bl]
+    if (!validQuad(q)) continue
+    const score = quadScore(q)
+    if (score > bestScore) { bestScore = score; best = q }
+  }
   return best
+}
+function quadScore(q: [Point, Point, Point, Point]) {
+  const areas = q.map(point => (point as Point & { area: number }).area)
+  const minimumArea = Math.min(...areas), maximumArea = Math.max(...areas)
+  const balance = minimumArea / maximumArea
+  const side = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
+  const horizontalBalance = Math.min(side(q[0], q[1]), side(q[3], q[2])) / Math.max(side(q[0], q[1]), side(q[3], q[2]))
+  const verticalBalance = Math.min(side(q[0], q[3]), side(q[1], q[2])) / Math.max(side(q[0], q[3]), side(q[1], q[2]))
+  return minimumArea * balance * horizontalBalance * verticalBalance
 }
 function components(p: Uint8ClampedArray, w: number, h: number, colour: number) {
   const step = 2, cw = Math.ceil(w / step), ch = Math.ceil(h / step), hit = new Uint8Array(cw * ch), seen = new Uint8Array(cw * ch), result: (Point & { area: number })[] = []
-  for (let y = 0; y < ch; y += 1) for (let x = 0; x < cw; x += 1) { const i = (y * step * w + x * step) * 4; if (matches([p[i], p[i + 1], p[i + 2]], OPTICAL_PALETTE[colour])) hit[y * cw + x] = 1 }
+  for (let y = 0; y < ch; y += 1) for (let x = 0; x < cw; x += 1) { const i = (y * step * w + x * step) * 4; if (matches([p[i], p[i + 1], p[i + 2]], ANCHOR_PALETTE[colour])) hit[y * cw + x] = 1 }
   for (let start = 0; start < hit.length; start += 1) if (hit[start] && !seen[start]) { const queue = [start]; seen[start] = 1; let count = 0, sx = 0, sy = 0; while (queue.length) { const n = queue.pop()!; const x = n % cw, y = Math.floor(n / cw); count += 1; sx += x * step; sy += y * step; for (const d of [-1, 1, -cw, cw]) { const next = n + d, nx = next % cw; if (next >= 0 && next < hit.length && Math.abs(nx - x) <= 1 && hit[next] && !seen[next]) { seen[next] = 1; queue.push(next) } } } if (count >= 8) result.push({ x: sx / count, y: sy / count, area: count }) }
   return result
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { GRID_SIZE, OPTICAL_PALETTE_CSS, TRANSMISSION_FPS } from '../lib/opticalFrame'
+import { ANCHOR_PALETTE_CSS, FINDERS, FINDER_SIZE, GRID_SIZE, OPTICAL_PALETTE_CSS, TRANSMISSION_FPS } from '../lib/opticalFrame'
 
 const COLOR_MAP = OPTICAL_PALETTE_CSS
 const FPS = TRANSMISSION_FPS
@@ -34,7 +34,8 @@ export function useOpticalTransmitter() {
     const blockH = canvas.height / GRID_SIZE
     for (let row = 0; row < GRID_SIZE; row += 1) {
       for (let col = 0; col < GRID_SIZE; col += 1) {
-        ctx.fillStyle = COLOR_MAP[frame[row * GRID_SIZE + col] ?? 0]
+        const finder = Object.values(FINDERS).find(candidate => row >= candidate.row && row < candidate.row + FINDER_SIZE && col >= candidate.column && col < candidate.column + FINDER_SIZE)
+        ctx.fillStyle = finder ? ANCHOR_PALETTE_CSS[finder.colour] : COLOR_MAP[frame[row * GRID_SIZE + col] ?? 0]
         ctx.fillRect(col * blockW, row * blockH, Math.ceil(blockW), Math.ceil(blockH))
       }
     }
