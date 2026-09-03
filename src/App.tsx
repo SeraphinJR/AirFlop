@@ -319,7 +319,7 @@ export default function Page() {
                       {transferComplete
                         ? 'File Received! Check your downloads.'
                         : totalFrames
-                          ? `Caught ${receivedFrames} / ${totalFrames} chunks`
+                          ? `Frames received: ${receivedFrames} / ${totalFrames}`
                           : 'Waiting for a signal...'}
                     </p>
                   </div>

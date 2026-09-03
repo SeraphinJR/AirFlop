@@ -8,6 +8,21 @@ type WakeLockSentinelLike = { release: () => Promise<void> }
 type WakeLockNavigator = Navigator & {
   wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> }
 }
+type ExposureRange = { min: number; max: number }
+type ExposureCapabilities = MediaTrackCapabilities & {
+  exposureMode?: string[]
+  exposureTime?: ExposureRange
+  iso?: ExposureRange
+}
+type ExposureSettings = MediaTrackSettings & {
+  exposureTime?: number
+  iso?: number
+}
+type ExposureConstraints = MediaTrackConstraintSet & {
+  exposureMode?: 'continuous' | 'manual'
+  exposureTime?: number
+  iso?: number
+}
 type ReceiverDebug = {
   status: string
   uniqueFrameIds: number[]
@@ -17,6 +32,28 @@ type ReceiverDebug = {
   decoder: string
   error: string
   anchors: { x: number; y: number }[]
+}
+
+async function lockExposure(track: MediaStreamTrack) {
+  const capabilities = track.getCapabilities() as ExposureCapabilities
+  if (!capabilities.exposureMode?.includes('manual')) return
+
+  try {
+    await track.applyConstraints({ advanced: [{ exposureMode: 'continuous' } as MediaTrackConstraintSet] })
+    await new Promise(resolve => window.setTimeout(resolve, 350))
+    const settings = track.getSettings() as ExposureSettings
+    const manual: ExposureConstraints = { exposureMode: 'manual' }
+    if (settings.exposureTime !== undefined && capabilities.exposureTime) manual.exposureTime = settings.exposureTime
+    if (settings.iso !== undefined && capabilities.iso) manual.iso = settings.iso
+    try {
+      await track.applyConstraints({ advanced: [manual] })
+    } catch {
+      await track.applyConstraints({ advanced: [{ exposureMode: 'manual' } as MediaTrackConstraintSet] })
+    }
+    console.info('[Camera] Exposure locked.', settings)
+  } catch (error) {
+    console.info('[Camera] Manual exposure is unavailable; using automatic exposure.', error)
+  }
 }
 
 export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage) => void) {
@@ -123,6 +160,8 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
       }
     }
 
+    const videoTrack = streamRef.current.getVideoTracks()[0]
+    if (videoTrack) await lockExposure(videoTrack)
     ensureDecoderWorker().postMessage({ type: 'RESET' })
 
     videoRef.current.srcObject = streamRef.current;
