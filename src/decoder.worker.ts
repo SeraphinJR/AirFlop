@@ -40,7 +40,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   for (const column of FRAME_ID_COLUMNS) { const symbol = sample(column, HEADER_ROW); const value = symbol && classify(symbol, localPalette); if (value === null || value === undefined) return reject('frame ID failure'); id = (id * 4 + value) & 0xffff }
   const payload = new Uint8Array(BYTES_PER_FRAME); let position = 0
   for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) {
-    const color = sample(column, row); const value = color && classify(color, localPalette, false)
+    const color = sample(column, row); const value = color && classify(color, localPalette, false, 1.2)
     if (value === null || value === undefined) { postDebug(`Payload failure at column ${column}, row ${row}`, anchors); return reject('payload failure', anchors) }
     payload[position >> 2] |= value << (6 - (position & 3) * 2); position += 1
   }
@@ -139,6 +139,6 @@ function sampleCell(p: Uint8ClampedArray, w: number, height: number, h: Homograp
   return [middle(red), middle(green), middle(blue)]
 }
 function distinct(palette: Rgb[]) { return palette.every((a, i) => palette.every((b, j) => i === j || chromaDistance(a,b) > .04)) }
-function classify(c: Rgb, palette: Rgb[], requireSeparation = true) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < .5 && (!requireSeparation || second-best > .005) ? winner : null }
+function classify(c: Rgb, palette: Rgb[], requireSeparation = true, maximumDistance = .5) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < maximumDistance && (!requireSeparation || second-best > .005) ? winner : null }
 function homography(source: Point[], destination: Point[]): Homography | null { const m:number[][]=[]; for(let i=0;i<4;i++){const {x,y}=source[i],{x:u,y:v}=destination[i];m.push([x,y,1,0,0,0,-u*x,-u*y,u],[0,0,0,x,y,1,-v*x,-v*y,v])} for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(m[r][c])>Math.abs(m[p][c]))p=r;if(Math.abs(m[p][c])<1e-8)return null;[m[c],m[p]]=[m[p],m[c]];const d=m[c][c];for(let k=c;k<9;k++)m[c][k]/=d;for(let r=0;r<8;r++)if(r!==c){const f=m[r][c];for(let k=c;k<9;k++)m[r][k]-=f*m[c][k]}} return m.map(row=>row[8]) as unknown as Homography }
 function project(h: Homography,x:number,y:number):Point { const d=h[6]*x+h[7]*y+1;return{x:(h[0]*x+h[1]*y+h[2])/d,y:(h[3]*x+h[4]*y+h[5])/d} }
