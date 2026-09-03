@@ -31,7 +31,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (!h) return reject('invalid quadrilateral')
   const sample = (column: number, row: number) => samplePatch(pixels, width, height, project(h, column + .5, row + .5), anchors)
   const palette = CALIBRATION_COLUMNS.map(column => sample(column, HEADER_ROW))
-  if (palette.some(value => !value) || !distinct(palette as Rgb[])) return reject('calibration failure')
+  if (palette.some(value => !value) || !distinct(palette as Rgb[])) return reject('calibration failure', anchors)
   const localPalette = palette as Rgb[]
   const clock = sample(FRAME_CLOCK_COLUMN, HEADER_ROW)
   if (!clock || classify(clock, localPalette) === null) return reject('ambiguous clock')
@@ -52,7 +52,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   await accept(id, payload)
 }
 
-function reject(reason: Rejection) { counters[reason] += 1; if (scanned % 10 === 0) postDebug(reason) }
+function reject(reason: Rejection, anchors?: Point[]) { counters[reason] += 1; if (scanned % 10 === 0) postDebug(reason, anchors) }
 function postDebug(status = 'Searching for a calibrated finder quadrilateral', anchors?: Point[]) { self.postMessage({ type: 'DEBUG', status, detectedFrames, anchors, rejectionSummary: Object.entries(counters).filter(([, count]) => count).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${count} x ${name}`).join(' | ') }) }
 async function accept(id: number, payload: Uint8Array) {
   if (id === 0) { const next = parseManifest(payload); if (!next) return; if (!manifest || !sameManifest(manifest, next)) { receivedFrames.clear(); manifest = next; self.postMessage({ type: 'MANIFEST', totalFrames: next.payloadFrameCount + 1 }) } }
@@ -112,8 +112,8 @@ function chromaDistance(a: Rgb, b: Rgb) {
   return Math.hypot(a[0] / an - b[0] / bn, a[1] / an - b[1] / bn, a[2] / an - b[2] / bn)
 }
 function validQuad(q: Point[]) { const cross = (a: Point, b: Point, c: Point) => (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x); const area = Math.abs(cross(q[0], q[1], q[2])) + Math.abs(cross(q[0], q[2], q[3])); return area > 900 && cross(q[0],q[1],q[2]) * cross(q[0],q[2],q[3]) > 0 }
-function samplePatch(p: Uint8ClampedArray, w: number, h: number, c: Point, anchors: Point[]): Rgb | null { const size = Math.max(1, Math.min(Math.hypot(anchors[1].x-anchors[0].x, anchors[1].y-anchors[0].y), Math.hypot(anchors[3].x-anchors[0].x, anchors[3].y-anchors[0].y)) / GRID_SIZE / 4); let r=0,g=0,b=0,n=0; for (let dy=-size; dy<=size; dy+=size) for (let dx=-size; dx<=size; dx+=size) { const x=Math.round(c.x+dx), y=Math.round(c.y+dy); if(x<0||y<0||x>=w||y>=h) continue; const i=(y*w+x)*4; r+=p[i];g+=p[i+1];b+=p[i+2];n++ } return n?[r/n,g/n,b/n]:null }
-function distinct(palette: Rgb[]) { return palette.every((a, i) => palette.every((b, j) => i === j || chromaDistance(a,b) > .08)) }
-function classify(c: Rgb, palette: Rgb[]) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < .35 && second-best > .015 ? winner : null }
+function samplePatch(p: Uint8ClampedArray, w: number, h: number, c: Point, anchors: Point[]): Rgb | null { const cellSize = Math.min(Math.hypot(anchors[1].x-anchors[0].x, anchors[1].y-anchors[0].y), Math.hypot(anchors[3].x-anchors[0].x, anchors[3].y-anchors[0].y)) / GRID_SIZE; const size = Math.floor(cellSize / 4); let r=0,g=0,b=0,n=0; for (let dy=-size;dy<=size;dy+=1) for (let dx=-size;dx<=size;dx+=1) { const x=Math.round(c.x+dx), y=Math.round(c.y+dy); if(x<0||y<0||x>=w||y>=h) continue; const i=(y*w+x)*4; r+=p[i];g+=p[i+1];b+=p[i+2];n++ } return n?[r/n,g/n,b/n]:null }
+function distinct(palette: Rgb[]) { return palette.every((a, i) => palette.every((b, j) => i === j || chromaDistance(a,b) > .04)) }
+function classify(c: Rgb, palette: Rgb[]) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < .5 && second-best > .005 ? winner : null }
 function homography(source: Point[], destination: Point[]): Homography | null { const m:number[][]=[]; for(let i=0;i<4;i++){const {x,y}=source[i],{x:u,y:v}=destination[i];m.push([x,y,1,0,0,0,-u*x,-u*y,u],[0,0,0,x,y,1,-v*x,-v*y,v])} for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(m[r][c])>Math.abs(m[p][c]))p=r;if(Math.abs(m[p][c])<1e-8)return null;[m[c],m[p]]=[m[p],m[c]];const d=m[c][c];for(let k=c;k<9;k++)m[c][k]/=d;for(let r=0;r<8;r++)if(r!==c){const f=m[r][c];for(let k=c;k<9;k++)m[r][k]-=f*m[c][k]}} return m.map(row=>row[8]) as unknown as Homography }
 function project(h: Homography,x:number,y:number):Point { const d=h[6]*x+h[7]*y+1;return{x:(h[0]*x+h[1]*y+h[2])/d,y:(h[3]*x+h[4]*y+h[5])/d} }
