@@ -23,6 +23,7 @@ type DecoderMessage = FrameMessage | { type: 'RESET' }
 const receivedFrames = new Map<number, Uint8Array>()
 let manifest: Manifest | null = null
 let decoding = false
+let complete = false
 let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
 
 self.onmessage = (event: MessageEvent<DecoderMessage>) => {
@@ -30,12 +31,14 @@ self.onmessage = (event: MessageEvent<DecoderMessage>) => {
     receivedFrames.clear()
     manifest = null
     decoding = false
+    complete = false
     return
   }
   if ('pixels' in event.data) void processFrame(event.data)
 }
 
 async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage) {
+  if (decoding || complete) return
   if (pixels.length !== width * height * 4) return
 
   const anchors = findAnchors(pixels, width, height)
@@ -85,23 +88,30 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
     if (!manifest || !sameManifest(manifest, nextManifest)) {
       receivedFrames.clear()
       manifest = nextManifest
-      self.postMessage({ type: 'MANIFEST', totalFrames: nextManifest.payloadFrameCount })
+      self.postMessage({ type: 'MANIFEST', totalFrames: nextManifest.payloadFrameCount + 1 })
     }
+    if (receivedFrames.has(0)) return
     receivedFrames.set(0, payload)
+    postProgress()
     await tryComplete()
     return
   }
 
   if (!manifest || frameId > manifest.payloadFrameCount || receivedFrames.has(frameId)) return
   receivedFrames.set(frameId, payload)
+  postProgress()
+
+  const requiredDataFrames = (manifest.payloadFrameCount / SHARDS_PER_GROUP) * DATA_SHARDS + 1
+  if (receivedFrames.size >= requiredDataFrames) await tryComplete()
+}
+
+function postProgress() {
+  if (!manifest) return
   self.postMessage({
     type: 'PROGRESS',
-    receivedFrames: receivedFrames.size - 1,
-    totalFrames: manifest.payloadFrameCount,
+    received: receivedFrames.size,
+    total: manifest.payloadFrameCount + 1,
   })
-
-  const requiredDataFrames = (manifest.payloadFrameCount / SHARDS_PER_GROUP) * DATA_SHARDS
-  if (receivedFrames.size - 1 >= requiredDataFrames) await tryComplete()
 }
 
 function isReservedCell(row: number, column: number) {
@@ -152,7 +162,13 @@ async function tryComplete() {
       result.set(shards.subarray(0, DATA_SHARDS * BYTES_PER_FRAME), group * DATA_SHARDS * BYTES_PER_FRAME)
     }
     const blob = new Blob([result.slice(0, manifest.fileSize)], { type: mimeTypeFor(manifest.extension) })
-    self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(blob) })
+    const extension = manifest.extension.trim().replace(/^\.+/, '')
+    complete = true
+    self.postMessage({
+      type: 'COMPLETE',
+      blobUrl: URL.createObjectURL(blob),
+      filename: extension ? `reconstructed.${extension}` : 'reconstructed',
+    })
   } finally {
     decoding = false
   }

@@ -106,6 +106,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) videoRef.current.srcObject = null
     const wakeLock = wakeLockRef.current
     wakeLockRef.current = null
     if (wakeLock) void wakeLock.release().catch(error => console.warn('[Camera] Failed to release Wake Lock.', error))

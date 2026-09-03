@@ -16,6 +16,15 @@ export function useOpticalTransmitter() {
   const renderLoopRef = useRef<(timestamp: number) => void>(() => {})
   const [currentFrame, setCurrentFrame] = useState(0)
 
+  const showCalibration = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d', { alpha: false })
+    if (!ctx) return
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }, [])
+
   const drawGrid = useCallback((frame: number[]) => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -85,5 +94,5 @@ export function useOpticalTransmitter() {
     };
   }, []);
 
-  return { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid }
+  return { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid, showCalibration }
 }

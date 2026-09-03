@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Camera,
@@ -25,23 +25,26 @@ export default function Page() {
   const [countdown, setCountdown] = useState<number | null>(null)
   const [receivedFrames, setReceivedFrames] = useState(0)
   const [transferComplete, setTransferComplete] = useState(false)
-  const { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid } = useOpticalTransmitter()
+  const stopCaptureRef = useRef<() => void>(() => undefined)
+  const { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid, showCalibration } = useOpticalTransmitter()
   const handleDecoderMessage = useCallback((event: MessageEvent<unknown>) => {
-    const message = event.data as { type?: string; totalFrames?: number; receivedFrames?: number; blobUrl?: string }
+    const message = event.data as { type?: string; totalFrames?: number; received?: number; total?: number; blobUrl?: string; filename?: string }
     if (message.type === 'MANIFEST' && message.totalFrames !== undefined) {
       setTotalFrames(message.totalFrames)
       setReceivedFrames(0)
       setProgress(0)
       setTransferComplete(false)
     }
-    if (message.type === 'PROGRESS' && message.totalFrames !== undefined && message.receivedFrames !== undefined) {
-      setReceivedFrames(message.receivedFrames)
-      setProgress(Math.min(100, (message.receivedFrames / message.totalFrames) * 100))
+    if (message.type === 'PROGRESS' && message.total !== undefined && message.received !== undefined) {
+      setTotalFrames(message.total)
+      setReceivedFrames(message.received)
+      setProgress(Math.min(100, (message.received / message.total) * 100))
     }
     if (message.type === 'COMPLETE' && message.blobUrl) {
+      stopCaptureRef.current()
       const download = document.createElement('a')
       download.href = message.blobUrl
-      download.download = 'airflop-transfer'
+      download.download = message.filename || 'reconstructed'
       download.hidden = true
       document.body.append(download)
       download.click()
@@ -53,6 +56,10 @@ export default function Page() {
   }, [])
   const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver(handleDecoderMessage);
   const isStreaming = isTransmitting || isCapturing;
+
+  useEffect(() => {
+    stopCaptureRef.current = stopCapture
+  }, [stopCapture])
 
   const expectedTime = totalFrames / 20
   const timeRemaining = Math.max(0, (totalFrames - currentFrame) / 20)
@@ -102,6 +109,7 @@ export default function Page() {
     if (!file) return
     if (!frames.length) return
     setProgress(0)
+    showCalibration()
     setCountdown(3)
   }
 
@@ -293,9 +301,9 @@ export default function Page() {
                     </div>
                     <p className="mt-3 font-mono text-xs text-muted-foreground">
                       {transferComplete
-                        ? 'Transfer Complete — your download has started.'
-                        : progress
-                          ? `${Math.round(progress)}% rebuilt · ${receivedFrames}/${totalFrames} frames`
+                        ? 'File Received! Check your downloads.'
+                        : totalFrames
+                          ? `Caught ${receivedFrames} / ${totalFrames} chunks`
                           : 'Waiting for a signal...'}
                     </p>
                   </div>
@@ -351,7 +359,7 @@ export default function Page() {
                     className="absolute inset-0 h-full w-full object-contain"
                   />
                   {countdown !== null ? (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 font-mono text-primary-foreground">
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/10 font-mono text-primary">
                       <span className="text-xs font-bold uppercase tracking-[0.3em]">Beam starts in</span>
                       <span className="mt-2 text-8xl font-black text-yellow">{countdown}</span>
                     </div>
