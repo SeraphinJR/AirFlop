@@ -61,13 +61,10 @@ export function useOpticalTransmitter() {
     const frameTime = frameIndexRef.current === 0 ? MANIFEST_HOLD_TIME : FRAME_TIME
     if (timestamp - lastDrawTime.current >= frameTime) {
       const nextIndex = frameIndexRef.current + 1
-      if (nextIndex >= framesRef.current.length) {
-        stopTransmission()
-        return
-      }
-      frameIndexRef.current = nextIndex
-      setCurrentFrame(nextIndex)
-      drawGrid(framesRef.current[nextIndex])
+      const frameIndex = nextIndex % framesRef.current.length
+      frameIndexRef.current = frameIndex
+      setCurrentFrame(frameIndex)
+      drawGrid(framesRef.current[frameIndex])
       lastDrawTime.current = timestamp - ((timestamp - lastDrawTime.current) % frameTime)
     }
     animationRef.current = requestAnimationFrame(renderLoopRef.current)

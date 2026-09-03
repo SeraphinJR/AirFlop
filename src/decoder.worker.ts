@@ -13,12 +13,21 @@ const receivedFrames = new Map<number, Uint8Array>()
 const foundFrameIds = new Set<number>()
 const counters: Record<Rejection | 'accepted unique frame', number> = { 'invalid dimensions': 0, 'no anchors': 0, 'invalid quadrilateral': 0, 'calibration failure': 0, 'ambiguous clock': 0, 'frame ID failure': 0, 'payload failure': 0, 'accepted unique frame': 0 }
 let manifest: Manifest | null = null, decoding = false, complete = false, scanned = 0, detectedFrames = 0, pending: { id: number; payload: Uint8Array } | null = null
+let frameQueue: FrameMessage[] = [], processingQueue = false
 let rsPromise: Promise<ReedSolomonErasure> | undefined
 
 self.onmessage = event => {
   const data = event.data as DecoderMessage
-  if ('type' in data) { receivedFrames.clear(); foundFrameIds.clear(); manifest = null; decoding = complete = false; scanned = detectedFrames = 0; pending = null; Object.keys(counters).forEach(key => { counters[key as keyof typeof counters] = 0 }); return }
-  void processFrame(data)
+  if ('type' in data) { receivedFrames.clear(); foundFrameIds.clear(); manifest = null; decoding = complete = false; scanned = detectedFrames = 0; pending = null; frameQueue = []; Object.keys(counters).forEach(key => { counters[key as keyof typeof counters] = 0 }); return }
+  frameQueue.push(data)
+  void processQueue()
+}
+
+async function processQueue() {
+  if (processingQueue) return
+  processingQueue = true
+  while (frameQueue.length && !complete) await processFrame(frameQueue.shift()!)
+  processingQueue = false
 }
 
 async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage) {
@@ -52,6 +61,10 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   // colors even when the display is still showing the same frame.
   if (!pending || pending.id !== id) { pending = { id, payload }; postDebug(); return }
   pending = null
+  if (manifest && (id < 0 || id > manifest.payloadFrameCount)) {
+    postDebug(`Discarded out-of-range frame ID ${id}`, anchors)
+    return
+  }
   foundFrameIds.add(id)
   await accept(id, payload)
 }
@@ -70,7 +83,7 @@ async function accept(id: number, payload: Uint8Array) {
       postDebug(`Manifest captured: ${totalFrameCount} total frames`)
     }
   }
-  if (!manifest || id > manifest.payloadFrameCount || receivedFrames.has(id)) return
+  if (!manifest || id < 0 || id > manifest.payloadFrameCount || receivedFrames.has(id)) return
   receivedFrames.set(id, payload); counters['accepted unique frame'] += 1
   self.postMessage({ type: 'PROGRESS', received: receivedFrames.size, total: manifest.payloadFrameCount + 1, detectedFrames })
   await tryComplete()
