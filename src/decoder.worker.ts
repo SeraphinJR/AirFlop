@@ -1,6 +1,6 @@
 import { ReedSolomonErasure } from './lib/reedSolomon'
 import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
-import { ANCHOR_PALETTE, BYTES_PER_FRAME, CALIBRATION_COLUMNS, DATA_SHARDS_PER_GROUP, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, PARITY_SHARDS_PER_GROUP, type Rgb } from './lib/opticalFrame'
+import { BYTES_PER_FRAME, CALIBRATION_COLUMNS, DATA_SHARDS_PER_GROUP, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, PARITY_SHARDS_PER_GROUP, type Rgb } from './lib/opticalFrame'
 
 type Point = { x: number; y: number }
 type Homography = readonly [number, number, number, number, number, number, number, number]
@@ -79,18 +79,23 @@ function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolom
 function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }
 
 function findAnchors(p: Uint8ClampedArray, w: number, h: number): [Point, Point, Point, Point] | null {
-  const blobs = [0, 1, 2, 3].map(colour => components(p, w, h, colour))
-  const red = blobs[0]; const teal = blobs[1]; const yellow = blobs[2]
-  const bottomLeft = blobs[3]
-  if (!red.length || !teal.length || !yellow.length || !bottomLeft.length) return null
+  const candidates = components(p, w, h)
+  if (candidates.length < 4) return null
   let best: [Point, Point, Point, Point] | null = null, bestScore = -Infinity
-  for (const tl of red) for (const bl of bottomLeft) for (const tr of teal) for (const br of yellow) {
-    const q: [Point, Point, Point, Point] = [tl, tr, br, bl]
+  for (let first = 0; first < candidates.length - 3; first += 1) for (let second = first + 1; second < candidates.length - 2; second += 1) for (let third = second + 1; third < candidates.length - 1; third += 1) for (let fourth = third + 1; fourth < candidates.length; fourth += 1) {
+    const q = orderQuad([candidates[first], candidates[second], candidates[third], candidates[fourth]])
     if (!validQuad(q)) continue
     const score = quadScore(q)
     if (score > bestScore) { bestScore = score; best = q }
   }
   return best
+}
+function orderQuad(points: (Point & { area: number })[]): [Point, Point, Point, Point] {
+  const topLeft = points.reduce((best, point) => point.x + point.y < best.x + best.y ? point : best)
+  const bottomRight = points.reduce((best, point) => point.x + point.y > best.x + best.y ? point : best)
+  const topRight = points.reduce((best, point) => point.x - point.y > best.x - best.y ? point : best)
+  const bottomLeft = points.find(point => point !== topLeft && point !== bottomRight && point !== topRight)!
+  return [topLeft, topRight, bottomRight, bottomLeft]
 }
 function quadScore(q: [Point, Point, Point, Point]) {
   const areas = q.map(point => (point as Point & { area: number }).area)
@@ -102,20 +107,16 @@ function quadScore(q: [Point, Point, Point, Point]) {
   if (balance < .55 || horizontalBalance < .65 || verticalBalance < .65) return -Infinity
   return minimumArea * balance * horizontalBalance * verticalBalance
 }
-function components(p: Uint8ClampedArray, w: number, h: number, colour: number) {
+function components(p: Uint8ClampedArray, w: number, h: number) {
   const step = 2, cw = Math.ceil(w / step), ch = Math.ceil(h / step), hit = new Uint8Array(cw * ch), seen = new Uint8Array(cw * ch), result: (Point & { area: number })[] = []
-  for (let y = 0; y < ch; y += 1) for (let x = 0; x < cw; x += 1) { const i = (y * step * w + x * step) * 4; if (matches([p[i], p[i + 1], p[i + 2]], ANCHOR_PALETTE[colour])) hit[y * cw + x] = 1 }
+  for (let y = 0; y < ch; y += 1) for (let x = 0; x < cw; x += 1) { const i = (y * step * w + x * step) * 4; if (matches([p[i], p[i + 1], p[i + 2]])) hit[y * cw + x] = 1 }
   for (let start = 0; start < hit.length; start += 1) if (hit[start] && !seen[start]) { const queue = [start]; seen[start] = 1; let count = 0, sx = 0, sy = 0; while (queue.length) { const n = queue.pop()!; const x = n % cw, y = Math.floor(n / cw); count += 1; sx += x * step; sy += y * step; for (const d of [-1, 1, -cw, cw]) { const next = n + d, nx = next % cw; if (next >= 0 && next < hit.length && Math.abs(nx - x) <= 1 && hit[next] && !seen[next]) { seen[next] = 1; queue.push(next) } } } if (count >= 8) result.push({ x: sx / count, y: sy / count, area: count }) }
   return result
 }
-function matches(c: Rgb, target: Rgb) {
-  const [red, green, blue] = c
+function matches(c: Rgb) {
   const maximum = Math.max(...c)
   const minimum = Math.min(...c)
-  if (target[0] === 255 && target[1] === 255) return minimum > 150 && maximum - minimum < 70
-  if (target[0] === 0 && target[1] === 0 && target[2] === 0) return maximum < 70 && maximum - minimum < 35
-  if (target[0] === 255) return red > green * 1.8 && red > blue * 1.8 && red > 70
-  return blue > red * 1.8 && blue > green * 1.35 && blue > 70
+  return minimum > 150 && maximum - minimum < 70
 }
 function chromaDistance(a: Rgb, b: Rgb) {
   const an = Math.max(...a, 1), bn = Math.max(...b, 1)
