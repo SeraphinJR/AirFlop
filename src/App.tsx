@@ -325,6 +325,7 @@ export default function Page() {
                       <div><dt className="inline text-foreground">Frames scanned: </dt><dd className="inline">{receiverDebug.framesScanned}</dd></div>
                       <div><dt className="inline text-foreground">Detected frames: </dt><dd className="inline">{receiverDebug.detectedFrames}</dd></div>
                       <div><dt className="inline text-foreground">Decoder: </dt><dd className="inline">{receiverDebug.decoder}</dd></div>
+                          <div><dt className="inline text-foreground">Anchors: </dt><dd className="inline">{receiverDebug.anchors.length} / 4 detected</dd></div>
                       {receiverDebug.error && <div className="text-coral"><dt className="inline text-foreground">Error: </dt><dd className="inline">{receiverDebug.error}</dd></div>}
                     </dl>
                   </details>
@@ -402,7 +403,23 @@ export default function Page() {
                     }`}
                   />
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
-                    <div className="h-full w-full rounded-xl border-2 border-mint-dark/60" />
+                    <div className="relative h-full w-full rounded-xl border-2 border-mint-dark/60">
+                      {[
+                        ['top-left', 'left-[8.33%] top-[8.33%] bg-coral'],
+                        ['top-right', 'right-[8.33%] top-[8.33%] bg-mint-dark'],
+                        ['bottom-right', 'right-[8.33%] bottom-[8.33%] bg-yellow'],
+                        ['bottom-left', 'left-[8.33%] bottom-[8.33%] bg-coral'],
+                      ].map(([label, className]) => (
+                        <span key={label} className={`absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80 shadow-sm ${className}`} />
+                      ))}
+                      {receiverDebug.anchors.map((anchor, index) => (
+                        <span
+                          key={`detected-${index}`}
+                          className="absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-transparent shadow-[0_0_0_2px_hsl(var(--primary))]"
+                          style={{ left: `${(anchor.x / 400) * 100}%`, top: `${(anchor.y / 400) * 100}%` }}
+                        />
+                      ))}
+                    </div>
                   </div>
                   {!isCapturing && (
                     <div className="absolute inset-0 flex items-center justify-center font-mono text-sm text-muted-foreground/70">

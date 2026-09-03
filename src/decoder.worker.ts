@@ -44,6 +44,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
     payload[position >> 2] |= value << (6 - (position & 3) * 2); position += 1
   }
   detectedFrames += 1
+  postDebug('Anchors and calibration detected', anchors)
   // A repeat proves that the camera did not sample a refresh transition. Payload is
   // intentionally decoded only after the same frame ID appears twice consecutively.
   if (!pending || pending.id !== id) { pending = { id, payload }; postDebug(); return }
@@ -52,7 +53,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
 }
 
 function reject(reason: Rejection) { counters[reason] += 1; if (scanned % 10 === 0) postDebug(reason) }
-function postDebug(status = 'Searching for a calibrated finder quadrilateral') { self.postMessage({ type: 'DEBUG', status, detectedFrames, rejectionSummary: Object.entries(counters).filter(([, count]) => count).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${count} x ${name}`).join(' | ') }) }
+function postDebug(status = 'Searching for a calibrated finder quadrilateral', anchors?: Point[]) { self.postMessage({ type: 'DEBUG', status, detectedFrames, anchors, rejectionSummary: Object.entries(counters).filter(([, count]) => count).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${count} x ${name}`).join(' | ') }) }
 async function accept(id: number, payload: Uint8Array) {
   if (id === 0) { const next = parseManifest(payload); if (!next) return; if (!manifest || !sameManifest(manifest, next)) { receivedFrames.clear(); manifest = next; self.postMessage({ type: 'MANIFEST', totalFrames: next.payloadFrameCount + 1 }) } }
   if (!manifest || id > manifest.payloadFrameCount || receivedFrames.has(id)) return
