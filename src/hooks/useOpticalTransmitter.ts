@@ -4,7 +4,7 @@ import { ANCHOR_PALETTE_CSS, FINDERS, FINDER_SIZE, GRID_SIZE, OPTICAL_PALETTE_CS
 const COLOR_MAP = OPTICAL_PALETTE_CSS
 const FPS = TRANSMISSION_FPS
 const FRAME_TIME = 1000 / FPS;
-const MANIFEST_HOLD_TIME = 2500
+const MANIFEST_HOLD_TIME = 2000
 
 export function useOpticalTransmitter() {
   const canvasRef = useRef<HTMLCanvasElement>(null);

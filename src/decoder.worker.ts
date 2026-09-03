@@ -83,7 +83,11 @@ async function accept(id: number, payload: Uint8Array) {
       postDebug(`Manifest captured: ${totalFrameCount} total frames`)
     }
   }
-  if (!manifest || id < 0 || id > manifest.payloadFrameCount || receivedFrames.has(id)) return
+  if (!manifest || id < 0 || id > manifest.payloadFrameCount) return
+  if (receivedFrames.has(id)) {
+    await tryComplete()
+    return
+  }
   receivedFrames.set(id, payload); counters['accepted unique frame'] += 1
   self.postMessage({ type: 'PROGRESS', received: receivedFrames.size, total: manifest.payloadFrameCount + 1, detectedFrames })
   await tryComplete()
@@ -96,10 +100,11 @@ function parseManifest(payload: Uint8Array): Manifest | null {
 }
 async function tryComplete() {
   if (!manifest || decoding) return
+  if (receivedFrames.size !== manifest.payloadFrameCount + 1) return
   const shardsPerGroup = DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP, groups = manifest.payloadFrameCount / shardsPerGroup
   for (let group = 0; group < groups; group += 1) { let count = 0; for (let shard = 0; shard < shardsPerGroup; shard += 1) if (receivedFrames.has(group * shardsPerGroup + shard + 1)) count += 1; if (count < DATA_SHARDS_PER_GROUP) return }
   decoding = true
-  try { const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), rs = await getRs(); for (let group = 0; group < groups; group += 1) { const shards = new Uint8Array(shardsPerGroup * BYTES_PER_FRAME), available: boolean[] = []; for (let shard = 0; shard < shardsPerGroup; shard += 1) { const frame = receivedFrames.get(group * shardsPerGroup + shard + 1); available.push(Boolean(frame)); if (frame) shards.set(frame, shard * BYTES_PER_FRAME) } if (rs.reconstruct(shards, DATA_SHARDS_PER_GROUP, PARITY_SHARDS_PER_GROUP, available) !== ReedSolomonErasure.RESULT_OK) return; output.set(shards.subarray(0, DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), group * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME) } complete = true; self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(new Blob([output.slice(0, manifest.fileSize)])), filename: manifest.extension ? `reconstructed.${manifest.extension.replace(/^\\.+/, '')}` : 'reconstructed' }) } finally { decoding = false }
+    try { const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), rs = await getRs(); for (let group = 0; group < groups; group += 1) { const shards = new Uint8Array(shardsPerGroup * BYTES_PER_FRAME), available: boolean[] = []; for (let shard = 0; shard < shardsPerGroup; shard += 1) { const frame = receivedFrames.get(group * shardsPerGroup + shard + 1); available.push(Boolean(frame)); if (frame) shards.set(frame, shard * BYTES_PER_FRAME) } if (rs.reconstruct(shards, DATA_SHARDS_PER_GROUP, PARITY_SHARDS_PER_GROUP, available) !== ReedSolomonErasure.RESULT_OK) { postDebug(`Reconstruction failed for group ${group + 1}; retrying`); return } output.set(shards.subarray(0, DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), group * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME) } complete = true; self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(new Blob([output.slice(0, manifest.fileSize)])), filename: manifest.extension ? `reconstructed.${manifest.extension.replace(/^\\.+/, '')}` : 'reconstructed' }) } finally { decoding = false }
 }
 function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl)); return rsPromise }
 function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }

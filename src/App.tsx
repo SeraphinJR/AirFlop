@@ -331,10 +331,7 @@ export default function Page() {
                       <div><dt className="inline text-foreground">Status: </dt><dd className="inline">{receiverDebug.status}</dd></div>
                       <div><dt className="inline text-foreground">Unique frame IDs: </dt><dd className="inline">{receiverDebug.uniqueFrameIds.length ? receiverDebug.uniqueFrameIds.join(', ') : 'None found'}</dd></div>
                       <div><dt className="inline text-foreground">Total frame count: </dt><dd className="inline">{receiverDebug.totalFrameCount ?? 'Unknown'}</dd></div>
-                      <div><dt className="inline text-foreground">Frames scanned: </dt><dd className="inline">{receiverDebug.framesScanned}</dd></div>
                       <div><dt className="inline text-foreground">Detected frames: </dt><dd className="inline">{receiverDebug.detectedFrames}</dd></div>
-                      <div><dt className="inline text-foreground">Decoder: </dt><dd className="inline">{receiverDebug.decoder}</dd></div>
-                          <div><dt className="inline text-foreground">Anchors: </dt><dd className="inline">{receiverDebug.anchors.length} / 4 detected</dd></div>
                       {receiverDebug.error && <div className="text-coral"><dt className="inline text-foreground">Error: </dt><dd className="inline">{receiverDebug.error}</dd></div>}
                     </dl>
                   </details>
