@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { GRID_SIZE, TRANSMISSION_FPS } from '../lib/opticalFrame'
+import { GRID_SIZE, OPTICAL_PALETTE_CSS, TRANSMISSION_FPS } from '../lib/opticalFrame'
 
-const COLOR_MAP = ['#000000', '#FF1744', '#00D9B5', '#FFDD00']
+const COLOR_MAP = OPTICAL_PALETTE_CSS
 const FPS = TRANSMISSION_FPS
 const FRAME_TIME = 1000 / FPS;
 

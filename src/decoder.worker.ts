@@ -1,339 +1,100 @@
 import { ReedSolomonErasure } from './lib/reedSolomon'
 import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
+import { BYTES_PER_FRAME, CALIBRATION_COLUMNS, DATA_SHARDS_PER_GROUP, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, OPTICAL_PALETTE, PARITY_SHARDS_PER_GROUP, type Rgb } from './lib/opticalFrame'
 
-// Keep this in sync with opticalFrame.ts. This low-density mode makes each cell
-// much easier for phone cameras to resolve while the protocol is being tested.
-const GRID_SIZE = 24
-const BYTES_PER_FRAME = (GRID_SIZE * GRID_SIZE - 24) / 4
-const DATA_SHARDS = 4
-const PARITY_SHARDS = 1
-const SHARDS_PER_GROUP = DATA_SHARDS + PARITY_SHARDS
-const REFERENCE_COLORS: readonly Rgb[] = [
-  [0, 0, 0], // black
-  [255, 23, 68], // red
-  [0, 217, 181], // cyan-green
-  [255, 221, 0], // yellow
-]
-
-type Rgb = readonly [number, number, number]
 type Point = { x: number; y: number }
 type Homography = readonly [number, number, number, number, number, number, number, number]
 type Manifest = { fileSize: number; payloadFrameCount: number; extension: string }
 type FrameMessage = { pixels: Uint8ClampedArray; width?: number; height?: number }
 type DecoderMessage = FrameMessage | { type: 'RESET' }
+type Rejection = 'invalid dimensions' | 'no anchors' | 'invalid quadrilateral' | 'calibration failure' | 'ambiguous clock' | 'frame ID failure' | 'payload failure'
 
 const receivedFrames = new Map<number, Uint8Array>()
-let manifest: Manifest | null = null
-let decoding = false
-let complete = false
-let inspectedFrames = 0
-let detectedFrames = 0
-let lastRejection = ''
-const rejectionCounts = new Map<string, number>()
-let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
+const counters: Record<Rejection | 'accepted unique frame', number> = { 'invalid dimensions': 0, 'no anchors': 0, 'invalid quadrilateral': 0, 'calibration failure': 0, 'ambiguous clock': 0, 'frame ID failure': 0, 'payload failure': 0, 'accepted unique frame': 0 }
+let manifest: Manifest | null = null, decoding = false, complete = false, scanned = 0, detectedFrames = 0, pending: { id: number; payload: Uint8Array } | null = null
+let rsPromise: Promise<ReedSolomonErasure> | undefined
 
-self.onmessage = (event: MessageEvent<DecoderMessage>) => {
-  if ('type' in event.data && event.data.type === 'RESET') {
-    receivedFrames.clear()
-    manifest = null
-    decoding = false
-    complete = false
-    inspectedFrames = 0
-    detectedFrames = 0
-    lastRejection = ''
-    rejectionCounts.clear()
-    return
-  }
-  if ('pixels' in event.data) void processFrame(event.data)
+self.onmessage = event => {
+  const data = event.data as DecoderMessage
+  if ('type' in data) { receivedFrames.clear(); manifest = null; decoding = complete = false; scanned = detectedFrames = 0; pending = null; Object.keys(counters).forEach(key => { counters[key as keyof typeof counters] = 0 }); return }
+  void processFrame(data)
 }
 
 async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage) {
   if (decoding || complete) return
-  inspectedFrames += 1
-  if (inspectedFrames % 30 === 0) {
-    self.postMessage({
-      type: 'DEBUG',
-      status: lastRejection || `Analysed ${inspectedFrames} camera frames; searching for the grid`,
-      detectedFrames,
-      rejectionSummary: formatRejectionSummary(),
-    })
-  }
-  if (pixels.length !== width * height * 4) return reportRejection('Invalid camera frame dimensions')
-
+  scanned += 1
+  if (pixels.length !== width * height * 4) return reject('invalid dimensions')
   const anchors = findAnchors(pixels, width, height)
-  if (!anchors) return reportRejection('Finder markers not recognised — centre and fill the guide')
-  const transform = createHomography(
-    // Finder markers occupy cells, so map their centres (0.5 and 39.5), not
-    // the grid's outer edges. Mapping 0..40 puts top-row samples on a boundary.
-    [{ x: 0.5, y: 0.5 }, { x: GRID_SIZE - 0.5, y: 0.5 }, { x: GRID_SIZE - 0.5, y: GRID_SIZE - 0.5 }, { x: 0.5, y: GRID_SIZE - 0.5 }],
-    anchors,
-  )
-  if (!transform) return reportRejection('Grid perspective could not be calculated')
-
-  const sampleCell = (column: number, row: number) => sampleRgb(pixels, width, height, project(transform, column + 0.5, row + 0.5))
-  const calibration = [0, 1, 2, 3].map(column => sampleCell(column + 1, 0))
-  if (calibration.some(color => color === null)) return reportRejection('Calibration strip is outside the camera frame')
-  const palette = calibration as Rgb[]
-
-  // Column 21 is the sender's frame-clock cell. A color between palette values means
-  // that the camera observed a display refresh midway through an update.
-  const clock = sampleCell(21, 0)
-  if (!clock || isBlurred(clock, palette)) return reportRejection('Image is blurred or a display refresh is in progress')
-
-  let frameId = 0
-  for (let column = 5; column <= 20; column += 1) {
-    const color = sampleCell(column, 0)
-    if (!color) return reportRejection('Frame ID is outside the camera frame')
-    const symbol = classify(color, palette)
-    if (symbol === null) return reportRejection('Frame ID colours are not distinct enough')
-    frameId = (frameId * 4 + symbol) >>> 0
-  }
-
-  const payload = new Uint8Array(BYTES_PER_FRAME)
-  let symbolIndex = 0
-  for (let row = 0; row < GRID_SIZE; row += 1) {
-    for (let column = 0; column < GRID_SIZE; column += 1) {
-      if (isReservedCell(row, column)) continue
-      const color = sampleCell(column, row)
-      if (!color) return reportRejection('Payload is outside the camera frame')
-      const symbol = classify(color, palette)
-      if (symbol === null) return reportRejection('Payload colours are not distinct enough')
-      payload[symbolIndex >> 2] |= symbol << (6 - (symbolIndex & 3) * 2)
-      symbolIndex += 1
-    }
+  if (!anchors) return reject('no anchors')
+  if (!validQuad(anchors)) return reject('invalid quadrilateral')
+  const h = homography(FINDER_CENTRES as unknown as Point[], anchors)
+  if (!h) return reject('invalid quadrilateral')
+  const sample = (column: number, row: number) => samplePatch(pixels, width, height, project(h, column + .5, row + .5), anchors)
+  const palette = CALIBRATION_COLUMNS.map(column => sample(column, HEADER_ROW))
+  if (palette.some(value => !value) || !distinct(palette as Rgb[])) return reject('calibration failure')
+  const localPalette = palette as Rgb[]
+  const clock = sample(FRAME_CLOCK_COLUMN, HEADER_ROW)
+  if (!clock || classify(clock, localPalette) === null) return reject('ambiguous clock')
+  let id = 0
+  for (const column of FRAME_ID_COLUMNS) { const symbol = sample(column, HEADER_ROW); const value = symbol && classify(symbol, localPalette); if (value === null || value === undefined) return reject('frame ID failure'); id = (id * 4 + value) >>> 0 }
+  const payload = new Uint8Array(BYTES_PER_FRAME); let position = 0
+  for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) {
+    const color = sample(column, row); const value = color && classify(color, localPalette)
+    if (value === null || value === undefined) return reject('payload failure')
+    payload[position >> 2] |= value << (6 - (position & 3) * 2); position += 1
   }
   detectedFrames += 1
-
-  if (frameId === 0) {
-    const nextManifest = parseManifest(payload)
-    if (!nextManifest) return
-    if (!manifest || !sameManifest(manifest, nextManifest)) {
-      receivedFrames.clear()
-      manifest = nextManifest
-      self.postMessage({ type: 'MANIFEST', totalFrames: nextManifest.payloadFrameCount + 1 })
-    }
-    if (receivedFrames.has(0)) return
-    receivedFrames.set(0, payload)
-    postProgress()
-    await tryComplete()
-    return
-  }
-
-  if (!manifest || frameId > manifest.payloadFrameCount || receivedFrames.has(frameId)) return
-  receivedFrames.set(frameId, payload)
-  postProgress()
-
-  const requiredDataFrames = (manifest.payloadFrameCount / SHARDS_PER_GROUP) * DATA_SHARDS + 1
-  if (receivedFrames.size >= requiredDataFrames) await tryComplete()
+  // A repeat proves that the camera did not sample a refresh transition. Payload is
+  // intentionally decoded only after the same frame ID appears twice consecutively.
+  if (!pending || pending.id !== id) { pending = { id, payload }; postDebug(); return }
+  pending = null
+  await accept(id, payload)
 }
 
-function reportRejection(reason: string) {
-  rejectionCounts.set(reason, (rejectionCounts.get(reason) ?? 0) + 1)
-  if (reason === lastRejection) return
-  lastRejection = reason
-  self.postMessage({ type: 'DEBUG', status: reason, detectedFrames, rejectionSummary: formatRejectionSummary() })
+function reject(reason: Rejection) { counters[reason] += 1; if (scanned % 10 === 0) postDebug(reason) }
+function postDebug(status = 'Searching for a calibrated finder quadrilateral') { self.postMessage({ type: 'DEBUG', status, detectedFrames, rejectionSummary: Object.entries(counters).filter(([, count]) => count).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${count} x ${name}`).join(' | ') }) }
+async function accept(id: number, payload: Uint8Array) {
+  if (id === 0) { const next = parseManifest(payload); if (!next) return; if (!manifest || !sameManifest(manifest, next)) { receivedFrames.clear(); manifest = next; self.postMessage({ type: 'MANIFEST', totalFrames: next.payloadFrameCount + 1 }) } }
+  if (!manifest || id > manifest.payloadFrameCount || receivedFrames.has(id)) return
+  receivedFrames.set(id, payload); counters['accepted unique frame'] += 1
+  self.postMessage({ type: 'PROGRESS', received: receivedFrames.size, total: manifest.payloadFrameCount + 1, detectedFrames })
+  await tryComplete()
 }
-
-function formatRejectionSummary() {
-  return [...rejectionCounts.entries()]
-    .sort((left, right) => right[1] - left[1])
-    .slice(0, 3)
-    .map(([reason, count]) => `${count} × ${reason}`)
-    .join(' | ')
-}
-
-function postProgress() {
-  if (!manifest) return
-  self.postMessage({
-    type: 'PROGRESS',
-    received: receivedFrames.size,
-    total: manifest.payloadFrameCount + 1,
-    detectedFrames,
-  })
-}
-
-function isReservedCell(row: number, column: number) {
-  return (row === 0 && column <= 20) ||
-    (row === 0 && column === GRID_SIZE - 1) ||
-    (row === GRID_SIZE - 1 && column === 0) ||
-    (row === GRID_SIZE - 1 && column === GRID_SIZE - 1)
-}
-
 function parseManifest(payload: Uint8Array): Manifest | null {
   if (payload[0] !== 0x41 || payload[1] !== 0x49 || payload[2] !== 0x52 || payload[3] !== 0x46) return null
-  const extensionLength = payload[10]
-  if (extensionLength > BYTES_PER_FRAME - 11) return null
-  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
-  const payloadFrameCount = view.getUint16(8, false)
-  if (payloadFrameCount % SHARDS_PER_GROUP !== 0) return null
-  const maximumFileSize = (payloadFrameCount / SHARDS_PER_GROUP) * DATA_SHARDS * BYTES_PER_FRAME
-  if (view.getUint32(4, false) > maximumFileSize) return null
-  return {
-    fileSize: view.getUint32(4, false),
-    payloadFrameCount,
-    extension: new TextDecoder().decode(payload.subarray(11, 11 + extensionLength)),
-  }
+  const v = new DataView(payload.buffer, payload.byteOffset, payload.byteLength), payloadFrameCount = v.getUint16(8, false), extensionLength = payload[10]
+  if (extensionLength > BYTES_PER_FRAME - 11 || payloadFrameCount % (DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP)) return null
+  return { fileSize: v.getUint32(4, false), payloadFrameCount, extension: new TextDecoder().decode(payload.subarray(11, 11 + extensionLength)) }
 }
-
 async function tryComplete() {
   if (!manifest || decoding) return
-  const groupCount = manifest.payloadFrameCount / SHARDS_PER_GROUP
-  for (let group = 0; group < groupCount; group += 1) {
-    let available = 0
-    for (let shard = 0; shard < SHARDS_PER_GROUP; shard += 1) if (receivedFrames.has(group * SHARDS_PER_GROUP + shard + 1)) available += 1
-    if (available < DATA_SHARDS) return
-  }
-
+  const shardsPerGroup = DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP, groups = manifest.payloadFrameCount / shardsPerGroup
+  for (let group = 0; group < groups; group += 1) { let count = 0; for (let shard = 0; shard < shardsPerGroup; shard += 1) if (receivedFrames.has(group * shardsPerGroup + shard + 1)) count += 1; if (count < DATA_SHARDS_PER_GROUP) return }
   decoding = true
-  try {
-    const result = new Uint8Array(groupCount * DATA_SHARDS * BYTES_PER_FRAME)
-    const reedSolomon = await getReedSolomon()
-    for (let group = 0; group < groupCount; group += 1) {
-      const shards = new Uint8Array(SHARDS_PER_GROUP * BYTES_PER_FRAME)
-      const available: boolean[] = []
-      for (let shard = 0; shard < SHARDS_PER_GROUP; shard += 1) {
-        const frame = receivedFrames.get(group * SHARDS_PER_GROUP + shard + 1)
-        available.push(Boolean(frame))
-        if (frame) shards.set(frame, shard * BYTES_PER_FRAME)
-      }
-      if (reedSolomon.reconstruct(shards, DATA_SHARDS, PARITY_SHARDS, available) !== ReedSolomonErasure.RESULT_OK) return
-      result.set(shards.subarray(0, DATA_SHARDS * BYTES_PER_FRAME), group * DATA_SHARDS * BYTES_PER_FRAME)
-    }
-    const blob = new Blob([result.slice(0, manifest.fileSize)], { type: mimeTypeFor(manifest.extension) })
-    const extension = manifest.extension.trim().replace(/^\.+/, '')
-    complete = true
-    self.postMessage({
-      type: 'COMPLETE',
-      blobUrl: URL.createObjectURL(blob),
-      filename: extension ? `reconstructed.${extension}` : 'reconstructed',
-    })
-  } finally {
-    decoding = false
-  }
+  try { const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), rs = await getRs(); for (let group = 0; group < groups; group += 1) { const shards = new Uint8Array(shardsPerGroup * BYTES_PER_FRAME), available: boolean[] = []; for (let shard = 0; shard < shardsPerGroup; shard += 1) { const frame = receivedFrames.get(group * shardsPerGroup + shard + 1); available.push(Boolean(frame)); if (frame) shards.set(frame, shard * BYTES_PER_FRAME) } if (rs.reconstruct(shards, DATA_SHARDS_PER_GROUP, PARITY_SHARDS_PER_GROUP, available) !== ReedSolomonErasure.RESULT_OK) return; output.set(shards.subarray(0, DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), group * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME) } complete = true; self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(new Blob([output.slice(0, manifest.fileSize)])), filename: manifest.extension ? `reconstructed.${manifest.extension.replace(/^\\.+/, '')}` : 'reconstructed' }) } finally { decoding = false }
 }
+function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl)); return rsPromise }
+function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }
 
-function getReedSolomon() {
-  reedSolomonPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl))
-  return reedSolomonPromise
+function findAnchors(p: Uint8ClampedArray, w: number, h: number): [Point, Point, Point, Point] | null {
+  const blobs = [1, 2, 3].map(colour => components(p, w, h, colour))
+  const red = blobs[0]; const teal = blobs[1]; const yellow = blobs[2]
+  if (red.length < 2 || !teal.length || !yellow.length) return null
+  let best: [Point, Point, Point, Point] | null = null, bestScore = -Infinity
+  for (const tl of red) for (const bl of red) if (tl !== bl) for (const tr of teal) for (const br of yellow) { const q: [Point, Point, Point, Point] = [tl, tr, br, bl]; if (!validQuad(q)) continue; const score = tl.area + tr.area + br.area + bl.area; if (score > bestScore) { bestScore = score; best = q } }
+  return best
 }
-
-function sameManifest(left: Manifest, right: Manifest) {
-  return left.fileSize === right.fileSize && left.payloadFrameCount === right.payloadFrameCount && left.extension === right.extension
+function components(p: Uint8ClampedArray, w: number, h: number, colour: number) {
+  const step = 2, cw = Math.ceil(w / step), ch = Math.ceil(h / step), hit = new Uint8Array(cw * ch), seen = new Uint8Array(cw * ch), result: (Point & { area: number })[] = []
+  for (let y = 0; y < ch; y += 1) for (let x = 0; x < cw; x += 1) { const i = (y * step * w + x * step) * 4; if (matches([p[i], p[i + 1], p[i + 2]], OPTICAL_PALETTE[colour])) hit[y * cw + x] = 1 }
+  for (let start = 0; start < hit.length; start += 1) if (hit[start] && !seen[start]) { const queue = [start]; seen[start] = 1; let count = 0, sx = 0, sy = 0; while (queue.length) { const n = queue.pop()!; const x = n % cw, y = Math.floor(n / cw); count += 1; sx += x * step; sy += y * step; for (const d of [-1, 1, -cw, cw]) { const next = n + d, nx = next % cw; if (next >= 0 && next < hit.length && Math.abs(nx - x) <= 1 && hit[next] && !seen[next]) { seen[next] = 1; queue.push(next) } } } if (count >= 8) result.push({ x: sx / count, y: sy / count, area: count }) }
+  return result
 }
-
-function mimeTypeFor(extension: string) {
-  const known: Record<string, string> = { txt: 'text/plain', json: 'application/json', pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', zip: 'application/zip' }
-  return known[extension.toLowerCase()] ?? 'application/octet-stream'
-}
-
-function findAnchors(pixels: Uint8ClampedArray, width: number, height: number): [Point, Point, Point, Point] | null {
-  const targets: readonly [Rgb, (x: number, y: number) => number][] = [
-    [REFERENCE_COLORS[1], (x, y) => x + y],
-    [REFERENCE_COLORS[2], (x, y) => -x + y],
-    [REFERENCE_COLORS[3], (x, y) => -x - y],
-    [REFERENCE_COLORS[1], (x, y) => x - y],
-  ]
-  const anchors: Point[] = []
-  for (const [target, edgeScore] of targets) {
-    let best: Point | null = null
-    let bestScore = Number.POSITIVE_INFINITY
-    for (let y = 0; y < height; y += 2) for (let x = 0; x < width; x += 2) {
-      const offset = (y * width + x) * 4
-      const distance = rgbDistance([pixels[offset], pixels[offset + 1], pixels[offset + 2]], target)
-      const score = distance * 4 + edgeScore(x, y)
-      if (score < bestScore) { bestScore = score; best = { x, y } }
-    }
-    if (!best || bestScore > 800) return null
-    anchors.push(best)
-  }
-
-  // The edge-biased search returns the outside corner of each marker. The
-  // homography needs the marker centers, otherwise every sample is shifted by
-  // about half a cell and lands on a boundary.
-  const [topLeft, topRight, bottomRight, bottomLeft] = anchors
-  const cellX = (topRight.x - topLeft.x) / (GRID_SIZE - 1)
-  const cellY = (bottomLeft.y - topLeft.y) / (GRID_SIZE - 1)
-  return [
-    { x: topLeft.x + cellX / 2, y: topLeft.y + cellY / 2 },
-    { x: topRight.x - cellX / 2, y: topRight.y + cellY / 2 },
-    { x: bottomRight.x - cellX / 2, y: bottomRight.y - cellY / 2 },
-    { x: bottomLeft.x + cellX / 2, y: bottomLeft.y - cellY / 2 },
-  ]
-}
-
-function createHomography(source: Point[], destination: Point[]): Homography | null {
-  const matrix: number[][] = []
-  for (let index = 0; index < 4; index += 1) {
-    const { x, y } = source[index]
-    const { x: u, y: v } = destination[index]
-    matrix.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u])
-    matrix.push([0, 0, 0, x, y, 1, -v * x, -v * y, v])
-  }
-  for (let column = 0; column < 8; column += 1) {
-    let pivot = column
-    for (let row = column + 1; row < 8; row += 1) if (Math.abs(matrix[row][column]) > Math.abs(matrix[pivot][column])) pivot = row
-    if (Math.abs(matrix[pivot][column]) < 1e-8) return null
-    ;[matrix[column], matrix[pivot]] = [matrix[pivot], matrix[column]]
-    const divisor = matrix[column][column]
-    for (let item = column; item <= 8; item += 1) matrix[column][item] /= divisor
-    for (let row = 0; row < 8; row += 1) if (row !== column) {
-      const factor = matrix[row][column]
-      for (let item = column; item <= 8; item += 1) matrix[row][item] -= factor * matrix[column][item]
-    }
-  }
-  return matrix.map(row => row[8]) as unknown as Homography
-}
-
-function project(transform: Homography, x: number, y: number): Point {
-  const denominator = transform[6] * x + transform[7] * y + 1
-  return { x: (transform[0] * x + transform[1] * y + transform[2]) / denominator, y: (transform[3] * x + transform[4] * y + transform[5]) / denominator }
-}
-
-function sampleRgb(pixels: Uint8ClampedArray, width: number, height: number, point: Point): Rgb | null {
-  const x = Math.round(point.x)
-  const y = Math.round(point.y)
-  if (x < 0 || x >= width || y < 0 || y >= height) return null
-  let red = 0
-  let green = 0
-  let blue = 0
-  let samples = 0
-  for (let row = -2; row <= 2; row += 1) {
-    for (let column = -2; column <= 2; column += 1) {
-      const sampleX = x + column
-      const sampleY = y + row
-      if (sampleX < 0 || sampleX >= width || sampleY < 0 || sampleY >= height) continue
-      const offset = (sampleY * width + sampleX) * 4
-      red += pixels[offset]
-      green += pixels[offset + 1]
-      blue += pixels[offset + 2]
-      samples += 1
-    }
-  }
-  return samples ? [red / samples, green / samples, blue / samples] : null
-}
-
-function classify(color: Rgb, palette: Rgb[]) {
-  let winner = 0
-  let best = Number.POSITIVE_INFINITY
-  for (let index = 0; index < palette.length; index += 1) {
-    const distance = rgbDistance(color, palette[index])
-    if (distance < best) { best = distance; winner = index }
-  }
-  return best <= paletteSeparation(palette) * 0.8 ? winner : null
-}
-
-function isBlurred(color: Rgb, palette: Rgb[]) {
-  const distances = palette.map(candidate => rgbDistance(color, candidate)).sort((a, b) => a - b)
-  const separation = paletteSeparation(palette)
-  return distances[0] > separation * 0.7 || distances[1] - distances[0] < separation * 0.03
-}
-
-function paletteSeparation(palette: Rgb[]) {
-  let minimum = Number.POSITIVE_INFINITY
-  for (let first = 0; first < palette.length; first += 1) for (let second = first + 1; second < palette.length; second += 1) minimum = Math.min(minimum, rgbDistance(palette[first], palette[second]))
-  return minimum
-}
-
-function rgbDistance(left: Rgb, right: Rgb) {
-  return Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2])
-}
+function matches(c: Rgb, target: Rgb) { const [r, g, b] = c, max = Math.max(r, g, b), min = Math.min(r, g, b); if (max < 45 || max - min < 35) return false; return chromaDistance(c, target) < .24 }
+function chromaDistance(a: Rgb, b: Rgb) { const an = Math.max(...a), bn = Math.max(...b); return Math.hypot(a[0] / an - b[0] / bn, a[1] / an - b[1] / bn, a[2] / an - b[2] / bn) }
+function validQuad(q: Point[]) { const cross = (a: Point, b: Point, c: Point) => (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x); const area = Math.abs(cross(q[0], q[1], q[2])) + Math.abs(cross(q[0], q[2], q[3])); return area > 900 && cross(q[0],q[1],q[2]) * cross(q[0],q[2],q[3]) > 0 }
+function samplePatch(p: Uint8ClampedArray, w: number, h: number, c: Point, anchors: Point[]): Rgb | null { const size = Math.max(1, Math.min(Math.hypot(anchors[1].x-anchors[0].x, anchors[1].y-anchors[0].y), Math.hypot(anchors[3].x-anchors[0].x, anchors[3].y-anchors[0].y)) / GRID_SIZE / 4); let r=0,g=0,b=0,n=0; for (let dy=-size; dy<=size; dy+=size) for (let dx=-size; dx<=size; dx+=size) { const x=Math.round(c.x+dx), y=Math.round(c.y+dy); if(x<0||y<0||x>=w||y>=h) continue; const i=(y*w+x)*4; r+=p[i];g+=p[i+1];b+=p[i+2];n++ } return n?[r/n,g/n,b/n]:null }
+function distinct(palette: Rgb[]) { return palette.every((a, i) => palette.every((b, j) => i === j || chromaDistance(a,b) > .16)) }
+function classify(c: Rgb, palette: Rgb[]) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < .22 && second-best > .035 ? winner : null }
+function homography(source: Point[], destination: Point[]): Homography | null { const m:number[][]=[]; for(let i=0;i<4;i++){const {x,y}=source[i],{x:u,y:v}=destination[i];m.push([x,y,1,0,0,0,-u*x,-u*y,u],[0,0,0,x,y,1,-v*x,-v*y,v])} for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(m[r][c])>Math.abs(m[p][c]))p=r;if(Math.abs(m[p][c])<1e-8)return null;[m[c],m[p]]=[m[p],m[c]];const d=m[c][c];for(let k=c;k<9;k++)m[c][k]/=d;for(let r=0;r<8;r++)if(r!==c){const f=m[r][c];for(let k=c;k<9;k++)m[r][k]-=f*m[c][k]}} return m.map(row=>row[8]) as unknown as Homography }
+function project(h: Homography,x:number,y:number):Point { const d=h[6]*x+h[7]*y+1;return{x:(h[0]*x+h[1]*y+h[2])/d,y:(h[3]*x+h[4]*y+h[5])/d} }

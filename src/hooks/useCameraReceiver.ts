@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { TRANSMISSION_FPS } from '../lib/opticalFrame'
 
 type DecoderWorkerMessage = MessageEvent<unknown>
 type WakeLockSentinelLike = { release: () => Promise<void> }
@@ -168,7 +169,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     // The worker does substantial pixel analysis. Pacing input to the sender's
     // 20fps prevents a backlog of stale frames on mobile devices.
     const now = performance.now()
-    if (ctx && now - lastFrameSentAtRef.current >= 100) {
+    if (ctx && now - lastFrameSentAtRef.current >= 1000 / TRANSMISSION_FPS) {
       // Draw the center square of the video frame to our offscreen canvas
       const vw = videoRef.current.videoWidth;
       const vh = videoRef.current.videoHeight;
