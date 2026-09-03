@@ -329,8 +329,8 @@ export default function Page() {
                     </summary>
                     <dl className="mt-3 grid gap-2 break-words font-mono text-[11px] leading-5 text-muted-foreground">
                       <div><dt className="inline text-foreground">Status: </dt><dd className="inline">{receiverDebug.status}</dd></div>
-                      <div><dt className="inline text-foreground">Video: </dt><dd className="inline">{receiverDebug.metadata}</dd></div>
-                      <div><dt className="inline text-foreground">Track: </dt><dd className="inline">{receiverDebug.track}</dd></div>
+                      <div><dt className="inline text-foreground">Unique frame IDs: </dt><dd className="inline">{receiverDebug.uniqueFrameIds.length ? receiverDebug.uniqueFrameIds.join(', ') : 'None found'}</dd></div>
+                      <div><dt className="inline text-foreground">Total frame count: </dt><dd className="inline">{receiverDebug.totalFrameCount ?? 'Unknown'}</dd></div>
                       <div><dt className="inline text-foreground">Frames scanned: </dt><dd className="inline">{receiverDebug.framesScanned}</dd></div>
                       <div><dt className="inline text-foreground">Detected frames: </dt><dd className="inline">{receiverDebug.detectedFrames}</dd></div>
                       <div><dt className="inline text-foreground">Decoder: </dt><dd className="inline">{receiverDebug.decoder}</dd></div>

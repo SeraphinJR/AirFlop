@@ -10,13 +10,14 @@ type DecoderMessage = FrameMessage | { type: 'RESET' }
 type Rejection = 'invalid dimensions' | 'no anchors' | 'invalid quadrilateral' | 'calibration failure' | 'ambiguous clock' | 'frame ID failure' | 'payload failure'
 
 const receivedFrames = new Map<number, Uint8Array>()
+const foundFrameIds = new Set<number>()
 const counters: Record<Rejection | 'accepted unique frame', number> = { 'invalid dimensions': 0, 'no anchors': 0, 'invalid quadrilateral': 0, 'calibration failure': 0, 'ambiguous clock': 0, 'frame ID failure': 0, 'payload failure': 0, 'accepted unique frame': 0 }
 let manifest: Manifest | null = null, decoding = false, complete = false, scanned = 0, detectedFrames = 0, pending: { id: number; payload: Uint8Array } | null = null
 let rsPromise: Promise<ReedSolomonErasure> | undefined
 
 self.onmessage = event => {
   const data = event.data as DecoderMessage
-  if ('type' in data) { receivedFrames.clear(); manifest = null; decoding = complete = false; scanned = detectedFrames = 0; pending = null; Object.keys(counters).forEach(key => { counters[key as keyof typeof counters] = 0 }); return }
+  if ('type' in data) { receivedFrames.clear(); foundFrameIds.clear(); manifest = null; decoding = complete = false; scanned = detectedFrames = 0; pending = null; Object.keys(counters).forEach(key => { counters[key as keyof typeof counters] = 0 }); return }
   void processFrame(data)
 }
 
@@ -38,6 +39,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (!clock || classify(clock, localPalette) === null) return reject('ambiguous clock')
   let id = 0
   for (const column of FRAME_ID_COLUMNS) { const symbol = sample(column, HEADER_ROW); const value = symbol && classify(symbol, localPalette); if (value === null || value === undefined) return reject('frame ID failure'); id = (id * 4 + value) & 0xffff }
+  foundFrameIds.add(id)
   const payload = new Uint8Array(BYTES_PER_FRAME); let position = 0
   for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) {
     const color = sample(column, row); const value = color && classify(color, localPalette, false, 1.2)
@@ -47,17 +49,21 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   detectedFrames += 1
   postDebug('Anchors and calibration detected', anchors)
   // A repeat proves that the camera did not sample a refresh transition. Payload is
-  // intentionally decoded only after the same frame ID appears twice consecutively.
+  // accepted from the second read because camera noise can change borderline payload
+  // colors even when the display is still showing the same frame.
   if (!pending || pending.id !== id) { pending = { id, payload }; postDebug(); return }
-  if (!sameBytes(pending.payload, payload)) { pending = { id, payload }; postDebug('Payload changed between consecutive reads', anchors); return }
   pending = null
   await accept(id, payload)
 }
 
 function reject(reason: Rejection, anchors?: Point[]) { counters[reason] += 1; if (scanned % 10 === 0) postDebug(reason, anchors) }
-function postDebug(status = 'Searching for a calibrated finder quadrilateral', anchors?: Point[]) { self.postMessage({ type: 'DEBUG', status, detectedFrames, anchors, rejectionSummary: Object.entries(counters).filter(([, count]) => count).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${count} x ${name}`).join(' | ') }) }
+function postDebug(status = 'Searching for a calibrated finder quadrilateral', anchors?: Point[]) { self.postMessage({ type: 'DEBUG', status, detectedFrames, anchors, foundFrameIds: [...foundFrameIds].sort((a, b) => a - b), totalFrameCount: manifest ? manifest.payloadFrameCount + 1 : null, rejectionSummary: Object.entries(counters).filter(([, count]) => count).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => `${count} x ${name}`).join(' | ') }) }
 async function accept(id: number, payload: Uint8Array) {
-  if (id === 0) { const next = parseManifest(payload); if (!next) return; if (!manifest || !sameManifest(manifest, next)) { receivedFrames.clear(); manifest = next; self.postMessage({ type: 'MANIFEST', totalFrames: next.payloadFrameCount + 1 }) } }
+  if (id === 0) {
+    const next = parseManifest(payload)
+    if (!next) { postDebug('Frame 0 received but manifest is invalid'); return }
+    if (!manifest || !sameManifest(manifest, next)) { receivedFrames.clear(); manifest = next; self.postMessage({ type: 'MANIFEST', totalFrames: next.payloadFrameCount + 1 }) }
+  }
   if (!manifest || id > manifest.payloadFrameCount || receivedFrames.has(id)) return
   receivedFrames.set(id, payload); counters['accepted unique frame'] += 1
   self.postMessage({ type: 'PROGRESS', received: receivedFrames.size, total: manifest.payloadFrameCount + 1, detectedFrames })
@@ -78,7 +84,6 @@ async function tryComplete() {
 }
 function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl)); return rsPromise }
 function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }
-function sameBytes(a: Uint8Array, b: Uint8Array) { return a.length === b.length && a.every((value, index) => value === b[index]) }
 
 function findAnchors(p: Uint8ClampedArray, w: number, h: number): [Point, Point, Point, Point] | null {
   const candidates = components(p, w, h)

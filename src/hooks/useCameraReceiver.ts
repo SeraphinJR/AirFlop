@@ -8,8 +8,8 @@ type WakeLockNavigator = Navigator & {
 }
 type ReceiverDebug = {
   status: string
-  metadata: string
-  track: string
+  uniqueFrameIds: number[]
+  totalFrameCount: number | null
   framesScanned: number
   detectedFrames: number
   decoder: string
@@ -29,7 +29,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
   const scannedFramesRef = useRef(0)
   const lastFrameSentAtRef = useRef(0)
   const [debug, setDebug] = useState<ReceiverDebug>({
-    status: 'Camera is idle', metadata: 'Not available', track: 'Not available', framesScanned: 0, detectedFrames: 0, decoder: 'Waiting', error: '', anchors: [],
+    status: 'Camera is idle', uniqueFrameIds: [], totalFrameCount: null, framesScanned: 0, detectedFrames: 0, decoder: 'Waiting', error: '', anchors: [],
   })
 
   // We use a small offscreen canvas to avoid massive memory allocations
@@ -51,11 +51,13 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     const decoderWorker = new Worker(new URL('../decoder.worker.ts', import.meta.url), { type: 'module' })
     decoderWorker.onmessage = event => {
-      const message = event.data as { type?: string; status?: string; detectedFrames?: number; anchors?: { x: number; y: number }[] }
+      const message = event.data as { type?: string; status?: string; detectedFrames?: number; anchors?: { x: number; y: number }[]; foundFrameIds?: number[]; totalFrameCount?: number | null }
       setDebug(current => ({
         ...current,
         detectedFrames: message.detectedFrames ?? current.detectedFrames,
         anchors: message.type === 'DEBUG' ? message.anchors ?? [] : current.anchors,
+        uniqueFrameIds: message.foundFrameIds ?? current.uniqueFrameIds,
+        totalFrameCount: message.totalFrameCount ?? current.totalFrameCount,
         decoder: message.status
           ? `${message.status}${'rejectionSummary' in message && message.rejectionSummary ? ` · ${message.rejectionSummary}` : ''}`
           : (message.type ? `Received ${message.type}` : 'Received an unrecognised message'),
@@ -80,7 +82,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     scannedFramesRef.current = 0
     lastFrameSentAtRef.current = 0
-    setDebug({ status: 'Requesting camera permission…', metadata: 'Waiting for video metadata', track: 'Waiting for stream', framesScanned: 0, detectedFrames: 0, decoder: 'Waiting', error: '', anchors: [] })
+    setDebug({ status: 'Requesting camera permission…', uniqueFrameIds: [], totalFrameCount: null, framesScanned: 0, detectedFrames: 0, decoder: 'Waiting', error: '', anchors: [] })
 
     try {
       const wakeLock = (navigator as WakeLockNavigator).wakeLock
@@ -136,7 +138,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
         width: video?.videoWidth,
         height: video?.videoHeight,
       });
-      setDebug(current => ({ ...current, metadata: `${video?.videoWidth ?? 0} × ${video?.videoHeight ?? 0}px`, status: 'Video metadata received' }))
+      setDebug(current => ({ ...current, status: 'Video metadata received' }))
       startScanning()
     };
     await videoRef.current.play();
@@ -144,9 +146,6 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     // Some mobile browsers expose dimensions only after play(), while others fire
     // loadedmetadata first. This covers both without drawing invalid 0 × 0 frames.
     startScanning()
-    const track = streamRef.current.getVideoTracks()[0]
-    const settings = track?.getSettings()
-    setDebug(current => ({ ...current, track: track ? `${track.label || 'Rear camera'} · ${settings?.width ?? '?'} × ${settings?.height ?? '?'} @ ${settings?.frameRate ?? '?'}fps` : 'No video track' }))
   };
 
   const stopCapture = () => {
