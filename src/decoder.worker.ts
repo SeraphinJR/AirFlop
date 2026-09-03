@@ -62,7 +62,13 @@ async function accept(id: number, payload: Uint8Array) {
   if (id === 0) {
     const next = parseManifest(payload)
     if (!next) { postDebug('Frame 0 received but manifest is invalid'); return }
-    if (!manifest || !sameManifest(manifest, next)) { receivedFrames.clear(); manifest = next; self.postMessage({ type: 'MANIFEST', totalFrames: next.payloadFrameCount + 1 }) }
+    if (!manifest || !sameManifest(manifest, next)) {
+      receivedFrames.clear()
+      manifest = next
+      const totalFrameCount = next.payloadFrameCount + 1
+      self.postMessage({ type: 'MANIFEST', totalFrames: totalFrameCount, totalFrameCount, frameId: id })
+      postDebug(`Manifest captured: ${totalFrameCount} total frames`)
+    }
   }
   if (!manifest || id > manifest.payloadFrameCount || receivedFrames.has(id)) return
   receivedFrames.set(id, payload); counters['accepted unique frame'] += 1

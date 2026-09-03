@@ -53,7 +53,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     const decoderWorker = new Worker(new URL('../decoder.worker.ts', import.meta.url), { type: 'module' })
     decoderWorker.onmessage = event => {
-      const message = event.data as { type?: string; status?: string; detectedFrames?: number; anchors?: { x: number; y: number }[]; foundFrameIds?: number[]; totalFrameCount?: number | null; totalFrames?: number }
+      const message = event.data as { type?: string; status?: string; detectedFrames?: number; anchors?: { x: number; y: number }[]; foundFrameIds?: number[]; totalFrameCount?: number | null; totalFrames?: number; frameId?: number }
       setDebug(current => ({
         ...current,
         detectedFrames: message.detectedFrames ?? current.detectedFrames,
