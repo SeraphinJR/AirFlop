@@ -29,6 +29,7 @@ let complete = false
 let inspectedFrames = 0
 let detectedFrames = 0
 let lastRejection = ''
+const rejectionCounts = new Map<string, number>()
 let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
 
 self.onmessage = (event: MessageEvent<DecoderMessage>) => {
@@ -40,6 +41,7 @@ self.onmessage = (event: MessageEvent<DecoderMessage>) => {
     inspectedFrames = 0
     detectedFrames = 0
     lastRejection = ''
+    rejectionCounts.clear()
     return
   }
   if ('pixels' in event.data) void processFrame(event.data)
@@ -49,7 +51,12 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (decoding || complete) return
   inspectedFrames += 1
   if (inspectedFrames % 30 === 0) {
-    self.postMessage({ type: 'DEBUG', status: lastRejection || `Analysed ${inspectedFrames} camera frames; searching for the grid`, detectedFrames })
+    self.postMessage({
+      type: 'DEBUG',
+      status: lastRejection || `Analysed ${inspectedFrames} camera frames; searching for the grid`,
+      detectedFrames,
+      rejectionSummary: formatRejectionSummary(),
+    })
   }
   if (pixels.length !== width * height * 4) return reportRejection('Invalid camera frame dimensions')
 
@@ -121,9 +128,18 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
 }
 
 function reportRejection(reason: string) {
+  rejectionCounts.set(reason, (rejectionCounts.get(reason) ?? 0) + 1)
   if (reason === lastRejection) return
   lastRejection = reason
-  self.postMessage({ type: 'DEBUG', status: reason })
+  self.postMessage({ type: 'DEBUG', status: reason, detectedFrames, rejectionSummary: formatRejectionSummary() })
+}
+
+function formatRejectionSummary() {
+  return [...rejectionCounts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 3)
+    .map(([reason, count]) => `${count} × ${reason}`)
+    .join(' | ')
 }
 
 function postProgress() {

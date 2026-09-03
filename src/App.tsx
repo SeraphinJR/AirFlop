@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useOpticalTransmitter } from './hooks/useOpticalTransmitter'
 import { useCameraReceiver } from './hooks/useCameraReceiver'
-import { buildTransmissionFrames, GRID_SIZE } from './lib/opticalFrame'
+import { buildTransmissionFrames, GRID_SIZE, TRANSMISSION_FPS } from './lib/opticalFrame'
 
 export default function Page() {
   const [mode, setMode] = useState<'send' | 'catch'>('send')
@@ -61,8 +61,8 @@ export default function Page() {
     stopCaptureRef.current = stopCapture
   }, [stopCapture])
 
-  const expectedTime = totalFrames / 20
-  const timeRemaining = Math.max(0, (totalFrames - currentFrame) / 20)
+  const expectedTime = totalFrames / TRANSMISSION_FPS
+  const timeRemaining = Math.max(0, (totalFrames - currentFrame) / TRANSMISSION_FPS)
   const transmissionProgress = totalFrames > 0 ? Math.min(100, ((currentFrame + 1) / totalFrames) * 100) : 0
 
   useEffect(() => {
