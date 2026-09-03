@@ -109,8 +109,13 @@ function components(p: Uint8ClampedArray, w: number, h: number, colour: number) 
   return result
 }
 function matches(c: Rgb, target: Rgb) {
-  const distance = Math.hypot(c[0] - target[0], c[1] - target[1], c[2] - target[2]) / 441.67
-  return distance < .22
+  const [red, green, blue] = c
+  const maximum = Math.max(...c)
+  const minimum = Math.min(...c)
+  if (target[0] === 255 && target[1] === 255) return minimum > 150 && maximum - minimum < 70
+  if (target[0] === 0 && target[1] === 0 && target[2] === 0) return maximum < 70 && maximum - minimum < 35
+  if (target[0] === 255) return red > green * 1.8 && red > blue * 1.8 && red > 70
+  return blue > red * 1.8 && blue > green * 1.35 && blue > 70
 }
 function chromaDistance(a: Rgb, b: Rgb) {
   const an = Math.max(...a, 1), bn = Math.max(...b, 1)
