@@ -41,7 +41,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   const payload = new Uint8Array(BYTES_PER_FRAME); let position = 0
   for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) {
     const color = sample(column, row); const value = color && classify(color, localPalette)
-    if (value === null || value === undefined) return reject('payload failure')
+    if (value === null || value === undefined) { postDebug(`Payload failure at column ${column}, row ${row}`, anchors); return reject('payload failure', anchors) }
     payload[position >> 2] |= value << (6 - (position & 3) * 2); position += 1
   }
   detectedFrames += 1
