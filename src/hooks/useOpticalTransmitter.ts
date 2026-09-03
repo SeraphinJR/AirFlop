@@ -31,6 +31,14 @@ export function useOpticalTransmitter() {
     }
   }, [])
 
+  const clearGrid = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d', { alpha: false })
+    if (!ctx) return
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }, [])
+
   const stopTransmission = useCallback(() => {
     activeRef.current = false
     setIsTransmitting(false)
@@ -77,5 +85,5 @@ export function useOpticalTransmitter() {
     };
   }, []);
 
-  return { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission }
+  return { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid }
 }

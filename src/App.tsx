@@ -23,7 +23,7 @@ export default function Page() {
   const [frames, setFrames] = useState<number[][]>([])
   const [totalFrames, setTotalFrames] = useState(0)
   const [countdown, setCountdown] = useState<number | null>(null)
-  const { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission } = useOpticalTransmitter()
+  const { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission, clearGrid } = useOpticalTransmitter()
   const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver(() => {
   //Send this pixelData to a Web Worker.
   });
@@ -89,6 +89,7 @@ export default function Page() {
   function handleReset() {
     stopTransmission()
     stopCapture()
+    clearGrid()
     setProgress(0)
     setFile(null)
     setFrames([])
