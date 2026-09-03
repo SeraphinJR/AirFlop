@@ -371,7 +371,7 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="relative aspect-square w-full overflow-hidden rounded-2xl border-4 border-primary/10 bg-black lg:h-[calc(100vh-19rem)] lg:aspect-auto">
+            <div className="relative aspect-square w-full overflow-hidden rounded-2xl border-4 border-primary/10 bg-black">
               {mode === 'send' ? (
                 <>
                   <canvas
@@ -402,8 +402,8 @@ export default function Page() {
                       isCapturing ? 'opacity-100' : 'pointer-events-none opacity-0'
                     }`}
                   />
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-8">
-                    <div className="relative h-full w-full rounded-xl border-2 border-mint-dark/60">
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="relative h-full w-full border-2 border-mint-dark/60">
                       {[
                         ['top-left', 'left-[8.33%] top-[8.33%] bg-coral'],
                         ['top-right', 'right-[8.33%] top-[8.33%] bg-mint-dark'],

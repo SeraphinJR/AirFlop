@@ -92,11 +92,20 @@ function components(p: Uint8ClampedArray, w: number, h: number, colour: number) 
   return result
 }
 function matches(c: Rgb, target: Rgb) {
-  const [r, g, b] = c
-  const max = Math.max(r, g, b)
-  const min = Math.min(r, g, b)
-  if (max < 28 || max - min < 24) return false
-  return chromaDistance(c, target) < .36
+  const max = Math.max(...c)
+  const min = Math.min(...c)
+  if (max < 20 || max - min < 12) return false
+  const hue = colourHue(c)
+  const targetHue = colourHue(target)
+  const distance = Math.abs(hue - targetHue)
+  return Math.min(distance, 360 - distance) < 58
+}
+function colourHue([r, g, b]: Rgb) {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min
+  if (!delta) return 0
+  if (max === r) return (60 * ((g - b) / delta) + 360) % 360
+  if (max === g) return 60 * ((b - r) / delta) + 120
+  return 60 * ((r - g) / delta) + 240
 }
 function chromaDistance(a: Rgb, b: Rgb) {
   const an = Math.max(...a, 1), bn = Math.max(...b, 1)
