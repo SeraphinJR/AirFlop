@@ -4,7 +4,7 @@ import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_so
 export type Rgb = readonly [number, number, number]
 export const OPTICAL_PALETTE: readonly Rgb[] = [[12, 18, 28], [244, 63, 94], [20, 184, 166], [250, 204, 21]]
 export const OPTICAL_PALETTE_CSS = OPTICAL_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
-export const ANCHOR_PALETTE: readonly Rgb[] = [[37, 99, 235], [217, 70, 239], [249, 115, 22], [132, 204, 22]]
+export const ANCHOR_PALETTE: readonly Rgb[] = [[236, 72, 153], [34, 197, 94], [6, 182, 212], [234, 179, 8]]
 export const ANCHOR_PALETTE_CSS = ANCHOR_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
 export const GRID_SIZE = 24
 export const TRANSMISSION_FPS = 6
