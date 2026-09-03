@@ -4,6 +4,7 @@ import { ANCHOR_PALETTE_CSS, FINDERS, FINDER_SIZE, GRID_SIZE, OPTICAL_PALETTE_CS
 const COLOR_MAP = OPTICAL_PALETTE_CSS
 const FPS = TRANSMISSION_FPS
 const FRAME_TIME = 1000 / FPS;
+const MANIFEST_HOLD_TIME = 2500
 
 export function useOpticalTransmitter() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -57,7 +58,8 @@ export function useOpticalTransmitter() {
 
   const renderLoop = useCallback((timestamp: number) => {
     if (!activeRef.current) return
-    if (timestamp - lastDrawTime.current >= FRAME_TIME) {
+    const frameTime = frameIndexRef.current === 0 ? MANIFEST_HOLD_TIME : FRAME_TIME
+    if (timestamp - lastDrawTime.current >= frameTime) {
       const nextIndex = frameIndexRef.current + 1
       if (nextIndex >= framesRef.current.length) {
         stopTransmission()
@@ -66,7 +68,7 @@ export function useOpticalTransmitter() {
       frameIndexRef.current = nextIndex
       setCurrentFrame(nextIndex)
       drawGrid(framesRef.current[nextIndex])
-      lastDrawTime.current = timestamp - ((timestamp - lastDrawTime.current) % FRAME_TIME)
+      lastDrawTime.current = timestamp - ((timestamp - lastDrawTime.current) % frameTime)
     }
     animationRef.current = requestAnimationFrame(renderLoopRef.current)
   }, [drawGrid, stopTransmission])
