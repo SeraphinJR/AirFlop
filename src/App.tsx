@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  AlertTriangle,
   Camera,
   FileUp,
   Laptop,
@@ -50,7 +49,7 @@ export default function Page() {
 
   return (
     <main className="min-h-screen overflow-hidden bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-[90rem] items-center justify-between gap-4 px-5 py-6 md:px-8 lg:px-12">
+      <header className="mx-auto flex w-full max-w-[90rem] items-center justify-between gap-4 px-5 py-4 md:px-8 lg:px-12">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
             <Lightbulb size={19} />
@@ -67,7 +66,7 @@ export default function Page() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-[90rem] px-5 pb-14 md:px-8 lg:px-12">
+      <section className="mx-auto max-w-[90rem] px-5 pb-0 md:px-8 lg:px-12">
         <div
           className="mx-auto flex max-w-fit items-center gap-1 rounded-2xl border border-border bg-card p-1.5 shadow-sm"
           role="tablist"
@@ -99,7 +98,7 @@ export default function Page() {
           </button>
         </div>
 
-        <div className="mt-12 grid items-center gap-12 lg:grid-cols-[1fr_1.5fr] lg:gap-20">
+        <div className="mt-4 grid items-center gap-6 lg:grid-cols-[1fr_1.5fr] lg:gap-10">
           <div>
             <AnimatePresence mode="wait">
               {mode === 'send' ? (
@@ -120,11 +119,11 @@ export default function Page() {
                       <span className="absolute -bottom-1 left-1 right-0 h-3 -rotate-2 rounded-full bg-yellow/70" />
                     </span>
                   </h1>
-                  <p className="mt-6 max-w-md text-pretty text-base leading-7 text-muted-foreground">
+                  <p className="mt-4 max-w-md text-pretty text-base leading-7 text-muted-foreground">
                     A tiny, private light show for moving files from your screen to
                     any phone camera. No cloud. No cables. Just color.
                   </p>
-                  <label className="mt-8 flex cursor-pointer items-center gap-4 rounded-3xl border-2 border-dashed border-border bg-card p-5 transition-colors hover:border-primary/50 hover:bg-muted">
+                  <label className="mt-5 flex cursor-pointer items-center gap-4 rounded-3xl border-2 border-dashed border-border bg-card p-5 transition-colors hover:border-primary/50 hover:bg-muted">
                     <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-yellow/40 text-primary">
                       <FileUp size={22} />
                     </span>
@@ -175,13 +174,13 @@ export default function Page() {
                   <h1 className="max-w-xl text-balance text-5xl font-black leading-[0.98] tracking-[-0.06em] md:text-7xl">
                     Catch the <span className="text-mint-dark">light.</span>
                   </h1>
-                  <p className="mt-6 max-w-md text-pretty text-base leading-7 text-muted-foreground">
+                  <p className="mt-4 max-w-md text-pretty text-base leading-7 text-muted-foreground">
                     Point your camera at the sender's grid and let Bridge rebuild
                     your file, one colorful frame at a time.
                   </p>
                   <button
                     onClick={startCapture}
-                    className="mt-8 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-bold text-primary-foreground shadow-[0_5px_0_hsl(var(--primary-shadow))] transition-all hover:-translate-y-0.5 active:translate-y-1"
+                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-bold text-primary-foreground shadow-[0_5px_0_hsl(var(--primary-shadow))] transition-all hover:-translate-y-0.5 active:translate-y-1"
                   >
                     <Camera size={17} /> Open Camera
                   </button>
@@ -200,7 +199,7 @@ export default function Page() {
               )}
             </AnimatePresence>
 
-            <div className="mt-8 flex items-start gap-3 rounded-2xl bg-yellow/25 p-4 text-xs leading-5 text-foreground">
+            <div className="mt-5 flex items-start gap-3 rounded-2xl bg-yellow/25 p-4 text-xs leading-5 text-foreground">
               <ShieldAlert size={18} className="mt-0.5 shrink-0 text-coral" />
               <p>
                 <strong>Photosensitivity notice:</strong> This app uses rapidly
@@ -210,8 +209,8 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="relative rounded-[2rem] border border-border bg-card p-4 shadow-[0_20px_60px_-20px_hsl(var(--primary)/0.25)] md:p-6">
-            <div className="mb-5 flex items-center justify-between">
+          <div className="relative rounded-[2rem] border border-border bg-card p-4 shadow-[0_20px_60px_-20px_hsl(var(--primary)/0.25)] md:p-5">
+            <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
                   Live transmission
@@ -230,7 +229,7 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="relative aspect-square w-full overflow-hidden rounded-2xl border-4 border-primary/10 bg-black">
+            <div className="relative aspect-square w-full overflow-hidden rounded-2xl border-4 border-primary/10 bg-black lg:h-[calc(100vh-19rem)] lg:aspect-auto">
               {mode === 'send' ? (
                 <>
                   <canvas
@@ -268,27 +267,19 @@ export default function Page() {
               )}
             </div>
 
-            <div className="mt-5 flex items-center justify-between text-xs text-muted-foreground">
+            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-coral" /> 40 × 40 color grid
               </span>
-              <span className="font-mono">2-bit / 20 FPS</span>
+              <button
+                onClick={handleReset}
+                className="flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1.5 font-bold shadow-sm transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <RotateCcw size={13} /> Reset bridge
+              </button>
             </div>
           </div>
         </div>
-
-        <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5 text-xs text-muted-foreground">
-          <p className="flex items-center gap-2">
-            <AlertTriangle size={14} className="text-coral" /> Use in a well-lit space
-            for best results.
-          </p>
-          <button
-            onClick={handleReset}
-            className="flex items-center gap-2 font-bold hover:text-foreground"
-          >
-            <RotateCcw size={13} /> Reset bridge
-          </button>
-        </footer>
       </section>
     </main>
   )
