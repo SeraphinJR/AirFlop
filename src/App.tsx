@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useOpticalTransmitter } from './hooks/useOpticalTransmitter'
 import { useCameraReceiver } from './hooks/useCameraReceiver'
-import { buildFrames, BYTES_PER_FRAME } from './lib/opticalFrame'
+import { buildTransmissionFrames } from './lib/opticalFrame'
 
 export default function Page() {
   const [mode, setMode] = useState<'send' | 'catch'>('send')
@@ -55,9 +55,12 @@ export default function Page() {
       setTotalFrames(0)
       return
     }
-    setTotalFrames(Math.ceil(nextFile.size / BYTES_PER_FRAME))
     const data = new Uint8Array(await nextFile.arrayBuffer())
-    setFrames(buildFrames(data))
+    const extensionStart = nextFile.name.lastIndexOf('.')
+    const extension = extensionStart > 0 ? nextFile.name.slice(extensionStart + 1) : ''
+    const nextFrames = await buildTransmissionFrames(data, extension)
+    setFrames(nextFrames)
+    setTotalFrames(nextFrames.length)
   }
 
   function handleModeChange(nextMode: 'send' | 'catch') {
