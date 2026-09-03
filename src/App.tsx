@@ -414,10 +414,10 @@ export default function Page() {
                   <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
                     <div className="relative h-full w-full border-2 border-mint-dark/60">
                       {[
-                        ['top-left', 'left-[15.625%] top-[15.625%] bg-white'],
-                        ['top-right', 'right-[15.625%] top-[15.625%] bg-white'],
-                        ['bottom-right', 'right-[15.625%] bottom-[15.625%] bg-white'],
-                        ['bottom-left', 'left-[15.625%] bottom-[15.625%] bg-white'],
+                        ['top-left', 'left-[6.25%] top-[6.25%] bg-white'],
+                        ['top-right', 'right-[6.25%] top-[6.25%] bg-white'],
+                        ['bottom-right', 'right-[6.25%] bottom-[6.25%] bg-white'],
+                        ['bottom-left', 'left-[6.25%] bottom-[6.25%] bg-white'],
                       ].map(([label, className]) => (
                         <span key={label} className={`absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/80 shadow-sm ${className}`} />
                       ))}

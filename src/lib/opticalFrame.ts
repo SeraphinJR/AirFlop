@@ -13,18 +13,18 @@ export const HEADER_ROW = 8
 export const CALIBRATION_COLUMNS = [1, 2, 3, 4] as const
 export const FRAME_ID_COLUMNS = Array.from({ length: 8 }, (_, index) => index + 5)
 export const FRAME_CLOCK_COLUMN = 13
-export const FINDER_SIZE = 3
-export const FINDER_QUIET_SIZE = 4
+export const FINDER_SIZE = 2
+export const FINDER_QUIET_SIZE = 2
 export const FINDERS = {
-  topLeft: { row: 1, column: 1, colour: 0 }, topRight: { row: 1, column: GRID_SIZE - FINDER_SIZE - 1, colour: 0 },
-  bottomRight: { row: GRID_SIZE - FINDER_SIZE - 1, column: GRID_SIZE - FINDER_SIZE - 1, colour: 0 }, bottomLeft: { row: GRID_SIZE - FINDER_SIZE - 1, column: 1, colour: 0 },
+  topLeft: { row: 0, column: 0, colour: 0 }, topRight: { row: 0, column: GRID_SIZE - FINDER_SIZE, colour: 0 },
+  bottomRight: { row: GRID_SIZE - FINDER_SIZE, column: GRID_SIZE - FINDER_SIZE, colour: 0 }, bottomLeft: { row: GRID_SIZE - FINDER_SIZE, column: 0, colour: 0 },
 } as const
 export const FINDER_CENTRES = [
   { x: FINDERS.topLeft.column + FINDER_SIZE / 2, y: FINDERS.topLeft.row + FINDER_SIZE / 2 }, { x: FINDERS.topRight.column + FINDER_SIZE / 2, y: FINDERS.topRight.row + FINDER_SIZE / 2 },
   { x: FINDERS.bottomRight.column + FINDER_SIZE / 2, y: FINDERS.bottomRight.row + FINDER_SIZE / 2 }, { x: FINDERS.bottomLeft.column + FINDER_SIZE / 2, y: FINDERS.bottomLeft.row + FINDER_SIZE / 2 },
 ] as const
 export function isReservedCell(row: number, column: number) {
-  if (row === HEADER_ROW) return true
+  if (row === HEADER_ROW || row === 0 || row === GRID_SIZE - 1 || column === 0 || column === GRID_SIZE - 1) return true
   return (row < FINDER_QUIET_SIZE || row >= GRID_SIZE - FINDER_QUIET_SIZE) && (column < FINDER_QUIET_SIZE || column >= GRID_SIZE - FINDER_QUIET_SIZE)
 }
 export const PAYLOAD_BLOCKS_PER_FRAME = Array.from({ length: FRAME_BLOCKS }, (_, index) => index).filter(index => !isReservedCell(Math.floor(index / GRID_SIZE), index % GRID_SIZE)).length
