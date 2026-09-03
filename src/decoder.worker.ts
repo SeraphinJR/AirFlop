@@ -30,7 +30,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (!validQuad(anchors)) return reject('invalid quadrilateral')
   const h = homography(FINDER_CENTRES as unknown as Point[], anchors)
   if (!h) return reject('invalid quadrilateral')
-  const sample = (column: number, row: number) => samplePatch(pixels, width, height, project(h, column + .5, row + .5), anchors)
+  const sample = (column: number, row: number) => sampleCell(pixels, width, height, h, column, row)
   const palette = CALIBRATION_COLUMNS.map(column => sample(column, HEADER_ROW))
   if (palette.some(value => !value) || !distinct(palette as Rgb[])) return reject('calibration failure', anchors)
   const localPalette = palette as Rgb[]
@@ -123,7 +123,17 @@ function chromaDistance(a: Rgb, b: Rgb) {
   return Math.hypot(a[0] / an - b[0] / bn, a[1] / an - b[1] / bn, a[2] / an - b[2] / bn)
 }
 function validQuad(q: Point[]) { const cross = (a: Point, b: Point, c: Point) => (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x); const area = Math.abs(cross(q[0], q[1], q[2])) + Math.abs(cross(q[0], q[2], q[3])); return area > 900 && cross(q[0],q[1],q[2]) * cross(q[0],q[2],q[3]) > 0 }
-function samplePatch(p: Uint8ClampedArray, w: number, h: number, c: Point, anchors: Point[]): Rgb | null { const cellSize = Math.min(Math.hypot(anchors[1].x-anchors[0].x, anchors[1].y-anchors[0].y), Math.hypot(anchors[3].x-anchors[0].x, anchors[3].y-anchors[0].y)) / GRID_SIZE; const size = Math.floor(cellSize / 4); let r=0,g=0,b=0,n=0; for (let dy=-size;dy<=size;dy+=1) for (let dx=-size;dx<=size;dx+=1) { const x=Math.round(c.x+dx), y=Math.round(c.y+dy); if(x<0||y<0||x>=w||y>=h) continue; const i=(y*w+x)*4; r+=p[i];g+=p[i+1];b+=p[i+2];n++ } return n?[r/n,g/n,b/n]:null }
+function sampleCell(p: Uint8ClampedArray, w: number, height: number, h: Homography, column: number, row: number): Rgb | null {
+  let r = 0, g = 0, b = 0, n = 0
+  for (let sampleRow = 0; sampleRow < 3; sampleRow += 1) for (let sampleColumn = 0; sampleColumn < 3; sampleColumn += 1) {
+    const point = project(h, column + .3 + sampleColumn * .2, row + .3 + sampleRow * .2)
+    const x = Math.round(point.x), y = Math.round(point.y)
+    if (x < 0 || y < 0 || x >= w || y >= height) continue
+    const i = (y * w + x) * 4
+    r += p[i]; g += p[i + 1]; b += p[i + 2]; n += 1
+  }
+  return n ? [r / n, g / n, b / n] : null
+}
 function distinct(palette: Rgb[]) { return palette.every((a, i) => palette.every((b, j) => i === j || chromaDistance(a,b) > .04)) }
 function classify(c: Rgb, palette: Rgb[]) { let winner=0,best=Infinity,second=Infinity; palette.forEach((p,i)=>{const d=chromaDistance(c,p);if(d<best){second=best;best=d;winner=i}else if(d<second)second=d}); return best < .5 && second-best > .005 ? winner : null }
 function homography(source: Point[], destination: Point[]): Homography | null { const m:number[][]=[]; for(let i=0;i<4;i++){const {x,y}=source[i],{x:u,y:v}=destination[i];m.push([x,y,1,0,0,0,-u*x,-u*y,u],[0,0,0,x,y,1,-v*x,-v*y,v])} for(let c=0;c<8;c++){let p=c;for(let r=c+1;r<8;r++)if(Math.abs(m[r][c])>Math.abs(m[p][c]))p=r;if(Math.abs(m[p][c])<1e-8)return null;[m[c],m[p]]=[m[p],m[c]];const d=m[c][c];for(let k=c;k<9;k++)m[c][k]/=d;for(let r=0;r<8;r++)if(r!==c){const f=m[r][c];for(let k=c;k<9;k++)m[r][k]-=f*m[c][k]}} return m.map(row=>row[8]) as unknown as Homography }
