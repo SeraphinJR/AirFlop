@@ -24,6 +24,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
   const wakeLockRef = useRef<WakeLockSentinelLike | null>(null)
   const scanningRef = useRef(false)
   const scannedFramesRef = useRef(0)
+  const lastFrameSentAtRef = useRef(0)
   const [debug, setDebug] = useState<ReceiverDebug>({
     status: 'Camera is idle', metadata: 'Not available', track: 'Not available', framesScanned: 0, decoder: 'Waiting', error: '',
   })
@@ -68,6 +69,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     }
 
     scannedFramesRef.current = 0
+    lastFrameSentAtRef.current = 0
     setDebug({ status: 'Requesting camera permission…', metadata: 'Waiting for video metadata', track: 'Waiting for stream', framesScanned: 0, decoder: 'Waiting', error: '' })
 
     try {
@@ -80,18 +82,17 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     try {
       console.info('[Camera] Requesting rear camera access...');
-      // Attempt 1: Try to lock manual focus (often rejected by Android Chrome)
+      // Keep autofocus active. Manual focus can leave a display permanently out of focus.
       streamRef.current = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'environment', // Force rear camera
+          facingMode: { ideal: 'environment' },
           width: { ideal: 1920 },
           height: { ideal: 1080 },
-          advanced: [{ focusMode: 'manual' } as MediaTrackConstraintSet & { focusMode: string }]
         },
         audio: false,
       });
     } catch (err) {
-      console.warn('[Camera] Manual focus rejected; falling back to standard constraints.', err);
+      console.warn('[Camera] Preferred rear-camera constraints were rejected; falling back.', err);
       // Attempt 2: Standard rear camera
       try {
         streamRef.current = await navigator.mediaDevices.getUserMedia({
@@ -157,7 +158,10 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
     if (!scanningRef.current || !streamRef.current || !videoRef.current) return;
 
     const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
-    if (ctx) {
+    // The worker does substantial pixel analysis. Pacing input to the sender's
+    // 20fps prevents a backlog of stale frames on mobile devices.
+    const now = performance.now()
+    if (ctx && now - lastFrameSentAtRef.current >= 50) {
       // Draw the center square of the video frame to our offscreen canvas
       const vw = videoRef.current.videoWidth;
       const vh = videoRef.current.videoHeight;
@@ -179,6 +183,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
         { pixels: frameData.data, width: captureSize, height: captureSize },
         [frameData.data.buffer],
       )
+      lastFrameSentAtRef.current = now
       scannedFramesRef.current += 1
       if (scannedFramesRef.current % 15 === 0) {
         setDebug(current => ({ ...current, framesScanned: scannedFramesRef.current }))

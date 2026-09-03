@@ -25,6 +25,7 @@ let manifest: Manifest | null = null
 let decoding = false
 let complete = false
 let inspectedFrames = 0
+let lastRejection = ''
 let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
 
 self.onmessage = (event: MessageEvent<DecoderMessage>) => {
@@ -34,6 +35,7 @@ self.onmessage = (event: MessageEvent<DecoderMessage>) => {
     decoding = false
     complete = false
     inspectedFrames = 0
+    lastRejection = ''
     return
   }
   if ('pixels' in event.data) void processFrame(event.data)
@@ -43,34 +45,36 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (decoding || complete) return
   inspectedFrames += 1
   if (inspectedFrames % 30 === 0) {
-    self.postMessage({ type: 'DEBUG', status: `Analysed ${inspectedFrames} camera frames; searching for the grid` })
+    self.postMessage({ type: 'DEBUG', status: lastRejection || `Analysed ${inspectedFrames} camera frames; searching for the grid` })
   }
-  if (pixels.length !== width * height * 4) return
+  if (pixels.length !== width * height * 4) return reportRejection('Invalid camera frame dimensions')
 
   const anchors = findAnchors(pixels, width, height)
-  if (!anchors) return
+  if (!anchors) return reportRejection('Finder markers not recognised — centre and fill the guide')
   const transform = createHomography(
-    [{ x: 0, y: 0 }, { x: GRID_SIZE, y: 0 }, { x: GRID_SIZE, y: GRID_SIZE }, { x: 0, y: GRID_SIZE }],
+    // Finder markers occupy cells, so map their centres (0.5 and 39.5), not
+    // the grid's outer edges. Mapping 0..40 puts top-row samples on a boundary.
+    [{ x: 0.5, y: 0.5 }, { x: GRID_SIZE - 0.5, y: 0.5 }, { x: GRID_SIZE - 0.5, y: GRID_SIZE - 0.5 }, { x: 0.5, y: GRID_SIZE - 0.5 }],
     anchors,
   )
-  if (!transform) return
+  if (!transform) return reportRejection('Grid perspective could not be calculated')
 
   const sampleCell = (column: number, row: number) => sampleRgb(pixels, width, height, project(transform, column + 0.5, row + 0.5))
   const calibration = [0, 1, 2, 3].map(column => sampleCell(column + 1, 0))
-  if (calibration.some(color => color === null)) return
+  if (calibration.some(color => color === null)) return reportRejection('Calibration strip is outside the camera frame')
   const palette = calibration as Rgb[]
 
   // Column 21 is the sender's frame-clock cell. A color between palette values means
   // that the camera observed a display refresh midway through an update.
   const clock = sampleCell(21, 0)
-  if (!clock || isBlurred(clock, palette)) return
+  if (!clock || isBlurred(clock, palette)) return reportRejection('Image is blurred or a display refresh is in progress')
 
   let frameId = 0
   for (let column = 5; column <= 20; column += 1) {
     const color = sampleCell(column, 0)
-    if (!color) return
+    if (!color) return reportRejection('Frame ID is outside the camera frame')
     const symbol = classify(color, palette)
-    if (symbol === null) return
+    if (symbol === null) return reportRejection('Frame ID colours are not distinct enough')
     frameId = (frameId * 4 + symbol) >>> 0
   }
 
@@ -80,9 +84,9 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
     for (let column = 0; column < GRID_SIZE; column += 1) {
       if (isReservedCell(row, column)) continue
       const color = sampleCell(column, row)
-      if (!color) return
+      if (!color) return reportRejection('Payload is outside the camera frame')
       const symbol = classify(color, palette)
-      if (symbol === null) return
+      if (symbol === null) return reportRejection('Payload colours are not distinct enough')
       payload[symbolIndex >> 2] |= symbol << (6 - (symbolIndex & 3) * 2)
       symbolIndex += 1
     }
@@ -109,6 +113,12 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
 
   const requiredDataFrames = (manifest.payloadFrameCount / SHARDS_PER_GROUP) * DATA_SHARDS + 1
   if (receivedFrames.size >= requiredDataFrames) await tryComplete()
+}
+
+function reportRejection(reason: string) {
+  if (reason === lastRejection) return
+  lastRejection = reason
+  self.postMessage({ type: 'DEBUG', status: reason })
 }
 
 function postProgress() {
