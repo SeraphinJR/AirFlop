@@ -39,7 +39,6 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   if (!clock || classify(clock, localPalette) === null) return reject('ambiguous clock')
   let id = 0
   for (const column of FRAME_ID_COLUMNS) { const symbol = sample(column, HEADER_ROW); const value = symbol && classify(symbol, localPalette); if (value === null || value === undefined) return reject('frame ID failure'); id = (id * 4 + value) & 0xffff }
-  foundFrameIds.add(id)
   const payload = new Uint8Array(BYTES_PER_FRAME); let position = 0
   for (let row = 0; row < GRID_SIZE; row += 1) for (let column = 0; column < GRID_SIZE; column += 1) if (!isReservedCell(row, column)) {
     const color = sample(column, row); const value = color && classify(color, localPalette, false, 1.2)
@@ -53,6 +52,7 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   // colors even when the display is still showing the same frame.
   if (!pending || pending.id !== id) { pending = { id, payload }; postDebug(); return }
   pending = null
+  foundFrameIds.add(id)
   await accept(id, payload)
 }
 

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { TRANSMISSION_FPS } from '../lib/opticalFrame'
 
+const RECEIVER_SCAN_FPS = TRANSMISSION_FPS * 3
+
 type DecoderWorkerMessage = MessageEvent<unknown>
 type WakeLockSentinelLike = { release: () => Promise<void> }
 type WakeLockNavigator = Navigator & {
@@ -51,13 +53,13 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     const decoderWorker = new Worker(new URL('../decoder.worker.ts', import.meta.url), { type: 'module' })
     decoderWorker.onmessage = event => {
-      const message = event.data as { type?: string; status?: string; detectedFrames?: number; anchors?: { x: number; y: number }[]; foundFrameIds?: number[]; totalFrameCount?: number | null }
+      const message = event.data as { type?: string; status?: string; detectedFrames?: number; anchors?: { x: number; y: number }[]; foundFrameIds?: number[]; totalFrameCount?: number | null; totalFrames?: number }
       setDebug(current => ({
         ...current,
         detectedFrames: message.detectedFrames ?? current.detectedFrames,
         anchors: message.type === 'DEBUG' ? message.anchors ?? [] : current.anchors,
         uniqueFrameIds: message.foundFrameIds ?? current.uniqueFrameIds,
-        totalFrameCount: message.totalFrameCount ?? current.totalFrameCount,
+        totalFrameCount: message.totalFrameCount ?? (message.type === 'MANIFEST' ? message.totalFrames ?? current.totalFrameCount : current.totalFrameCount),
         decoder: message.status
           ? `${message.status}${'rejectionSummary' in message && message.rejectionSummary ? ` · ${message.rejectionSummary}` : ''}`
           : (message.type ? `Received ${message.type}` : 'Received an unrecognised message'),
@@ -168,9 +170,9 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
 
     const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
     // The worker does substantial pixel analysis. Pacing input to the sender's
-    // 20fps prevents a backlog of stale frames on mobile devices.
+    // Sample several times per transmitted frame so the same ID can be confirmed.
     const now = performance.now()
-    if (ctx && now - lastFrameSentAtRef.current >= 1000 / TRANSMISSION_FPS) {
+    if (ctx && now - lastFrameSentAtRef.current >= 1000 / RECEIVER_SCAN_FPS) {
       // Draw the center square of the video frame to our offscreen canvas
       const vw = videoRef.current.videoWidth;
       const vh = videoRef.current.videoHeight;
