@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { GRID_SIZE } from '../lib/opticalFrame'
 
-const COLOR_MAP = ['#1E293B', '#FB7185', '#A7F3D0', '#FDE047']
+const COLOR_MAP = ['#000000', '#FF1744', '#00D9B5', '#FFDD00']
 const FPS = 20;
 const FRAME_TIME = 1000 / FPS;
 

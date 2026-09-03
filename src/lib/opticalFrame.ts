@@ -1,9 +1,11 @@
 import { ReedSolomonErasure } from './reedSolomon'
 import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
 
-export const GRID_SIZE = 40
+// A deliberately low-density test mode. The 24-column grid is the smallest size
+// that retains the protocol's 21-cell header plus its corner marker.
+export const GRID_SIZE = 24
 export const FRAME_BLOCKS = GRID_SIZE * GRID_SIZE
-export const PAYLOAD_BLOCKS_PER_FRAME = 1576
+export const PAYLOAD_BLOCKS_PER_FRAME = FRAME_BLOCKS - 24
 export const BYTES_PER_FRAME = PAYLOAD_BLOCKS_PER_FRAME / 4
 export const DATA_SHARDS_PER_GROUP = 4
 export const PARITY_SHARDS_PER_GROUP = 1

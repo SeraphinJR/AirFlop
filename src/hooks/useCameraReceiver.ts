@@ -30,7 +30,7 @@ export function useCameraReceiver(onWorkerMessage: (event: DecoderWorkerMessage)
   })
 
   // We use a small offscreen canvas to avoid massive memory allocations
-  // 400x400 is enough resolution to read a 40x40 grid cleanly.
+  // 400x400 gives the low-density 24x24 grid generous sampling room.
   const captureSize = 400; 
   const canvasRef = useRef<HTMLCanvasElement>(document.createElement('canvas'));
 

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useOpticalTransmitter } from './hooks/useOpticalTransmitter'
 import { useCameraReceiver } from './hooks/useCameraReceiver'
-import { buildTransmissionFrames } from './lib/opticalFrame'
+import { buildTransmissionFrames, GRID_SIZE } from './lib/opticalFrame'
 
 export default function Page() {
   const [mode, setMode] = useState<'send' | 'catch'>('send')
@@ -415,7 +415,7 @@ export default function Page() {
             <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-coral" />
-                {mode === 'send' ? '40 × 40 color grid' : 'Camera frame scanner'}
+                {mode === 'send' ? `${GRID_SIZE} × ${GRID_SIZE} color grid` : 'Camera frame scanner'}
               </span>
               <button
                 onClick={handleReset}

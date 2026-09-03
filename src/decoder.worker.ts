@@ -1,16 +1,18 @@
 import { ReedSolomonErasure } from './lib/reedSolomon'
 import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
 
-const GRID_SIZE = 40
-const BYTES_PER_FRAME = 394
+// Keep this in sync with opticalFrame.ts. This low-density mode makes each cell
+// much easier for phone cameras to resolve while the protocol is being tested.
+const GRID_SIZE = 24
+const BYTES_PER_FRAME = (GRID_SIZE * GRID_SIZE - 24) / 4
 const DATA_SHARDS = 4
 const PARITY_SHARDS = 1
 const SHARDS_PER_GROUP = DATA_SHARDS + PARITY_SHARDS
 const REFERENCE_COLORS: readonly Rgb[] = [
-  [30, 41, 59], // slate
-  [251, 113, 133], // coral
-  [167, 243, 208], // mint
-  [253, 224, 71], // yellow
+  [0, 0, 0], // black
+  [255, 23, 68], // red
+  [0, 217, 181], // cyan-green
+  [255, 221, 0], // yellow
 ]
 
 type Rgb = readonly [number, number, number]
@@ -270,13 +272,13 @@ function classify(color: Rgb, palette: Rgb[]) {
     const distance = rgbDistance(color, palette[index])
     if (distance < best) { best = distance; winner = index }
   }
-  return best <= paletteSeparation(palette) * 0.45 ? winner : null
+  return best <= paletteSeparation(palette) * 0.8 ? winner : null
 }
 
 function isBlurred(color: Rgb, palette: Rgb[]) {
   const distances = palette.map(candidate => rgbDistance(color, candidate)).sort((a, b) => a - b)
   const separation = paletteSeparation(palette)
-  return distances[0] > separation * 0.35 || distances[1] - distances[0] < separation * 0.12
+  return distances[0] > separation * 0.7 || distances[1] - distances[0] < separation * 0.03
 }
 
 function paletteSeparation(palette: Rgb[]) {
