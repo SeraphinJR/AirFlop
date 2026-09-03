@@ -18,8 +18,8 @@ export const FINDERS = {
   bottomRight: { row: GRID_SIZE - 3, column: GRID_SIZE - 3, colour: 3 }, bottomLeft: { row: GRID_SIZE - 3, column: 1, colour: 1 },
 } as const
 export const FINDER_CENTRES = [
-  { x: FINDERS.topLeft.column + 0.5, y: FINDERS.topLeft.row + 0.5 }, { x: FINDERS.topRight.column + 0.5, y: FINDERS.topRight.row + 0.5 },
-  { x: FINDERS.bottomRight.column + 0.5, y: FINDERS.bottomRight.row + 0.5 }, { x: FINDERS.bottomLeft.column + 0.5, y: FINDERS.bottomLeft.row + 0.5 },
+  { x: FINDERS.topLeft.column + FINDER_SIZE / 2, y: FINDERS.topLeft.row + FINDER_SIZE / 2 }, { x: FINDERS.topRight.column + FINDER_SIZE / 2, y: FINDERS.topRight.row + FINDER_SIZE / 2 },
+  { x: FINDERS.bottomRight.column + FINDER_SIZE / 2, y: FINDERS.bottomRight.row + FINDER_SIZE / 2 }, { x: FINDERS.bottomLeft.column + FINDER_SIZE / 2, y: FINDERS.bottomLeft.row + FINDER_SIZE / 2 },
 ] as const
 export function isReservedCell(row: number, column: number) {
   if (row === HEADER_ROW) return true

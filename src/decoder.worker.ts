@@ -90,8 +90,17 @@ function components(p: Uint8ClampedArray, w: number, h: number, colour: number) 
   for (let start = 0; start < hit.length; start += 1) if (hit[start] && !seen[start]) { const queue = [start]; seen[start] = 1; let count = 0, sx = 0, sy = 0; while (queue.length) { const n = queue.pop()!; const x = n % cw, y = Math.floor(n / cw); count += 1; sx += x * step; sy += y * step; for (const d of [-1, 1, -cw, cw]) { const next = n + d, nx = next % cw; if (next >= 0 && next < hit.length && Math.abs(nx - x) <= 1 && hit[next] && !seen[next]) { seen[next] = 1; queue.push(next) } } } if (count >= 8) result.push({ x: sx / count, y: sy / count, area: count }) }
   return result
 }
-function matches(c: Rgb, target: Rgb) { const [r, g, b] = c, max = Math.max(r, g, b), min = Math.min(r, g, b); if (max < 45 || max - min < 35) return false; return chromaDistance(c, target) < .24 }
-function chromaDistance(a: Rgb, b: Rgb) { const an = Math.max(...a), bn = Math.max(...b); return Math.hypot(a[0] / an - b[0] / bn, a[1] / an - b[1] / bn, a[2] / an - b[2] / bn) }
+function matches(c: Rgb, target: Rgb) {
+  const [r, g, b] = c
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  if (max < 28 || max - min < 24) return false
+  return chromaDistance(c, target) < .36
+}
+function chromaDistance(a: Rgb, b: Rgb) {
+  const an = Math.max(...a, 1), bn = Math.max(...b, 1)
+  return Math.hypot(a[0] / an - b[0] / bn, a[1] / an - b[1] / bn, a[2] / an - b[2] / bn)
+}
 function validQuad(q: Point[]) { const cross = (a: Point, b: Point, c: Point) => (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x); const area = Math.abs(cross(q[0], q[1], q[2])) + Math.abs(cross(q[0], q[2], q[3])); return area > 900 && cross(q[0],q[1],q[2]) * cross(q[0],q[2],q[3]) > 0 }
 function samplePatch(p: Uint8ClampedArray, w: number, h: number, c: Point, anchors: Point[]): Rgb | null { const size = Math.max(1, Math.min(Math.hypot(anchors[1].x-anchors[0].x, anchors[1].y-anchors[0].y), Math.hypot(anchors[3].x-anchors[0].x, anchors[3].y-anchors[0].y)) / GRID_SIZE / 4); let r=0,g=0,b=0,n=0; for (let dy=-size; dy<=size; dy+=size) for (let dx=-size; dx<=size; dx+=size) { const x=Math.round(c.x+dx), y=Math.round(c.y+dy); if(x<0||y<0||x>=w||y>=h) continue; const i=(y*w+x)*4; r+=p[i];g+=p[i+1];b+=p[i+2];n++ } return n?[r/n,g/n,b/n]:null }
 function distinct(palette: Rgb[]) { return palette.every((a, i) => palette.every((b, j) => i === j || chromaDistance(a,b) > .08)) }
