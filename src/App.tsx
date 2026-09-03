@@ -20,10 +20,15 @@ export default function Page() {
   const [progress, setProgress] = useState(0)
   const [file, setFile] = useState<File | null>(null)
   const { canvasRef, isTransmitting, startTransmission, stopTransmission } = useOpticalTransmitter()
-  const { videoRef, isCapturing, startCapture } = useCameraReceiver(() => {
+  const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver(() => {
   //Send this pixelData to a Web Worker.
   });
+  const isStreaming = isTransmitting || isCapturing;
 
+  function handleModeChange(nextMode: 'send' | 'catch') {
+    if (nextMode === 'send') stopCapture()
+    setMode(nextMode)
+  }
 
   async function handleToggleBeam() {
     if (isTransmitting) {
@@ -41,8 +46,18 @@ export default function Page() {
     startTransmission(binaryData)
   }
 
+  function handleToggleCapture() {
+    if (isCapturing) {
+      stopCapture()
+      return
+    }
+
+    startCapture()
+  }
+
   function handleReset() {
     stopTransmission()
+    stopCapture()
     setProgress(0)
     setFile(null)
   }
@@ -73,7 +88,8 @@ export default function Page() {
           aria-label="Bridge mode"
         >
           <button
-            onClick={() => setMode('send')}
+            onClick={() => handleModeChange('send')}
+            disabled={isStreaming}
             role="tab"
             aria-selected={mode === 'send'}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all active:scale-95 ${
@@ -85,7 +101,8 @@ export default function Page() {
             <Laptop size={16} /> Send File
           </button>
           <button
-            onClick={() => setMode('catch')}
+            onClick={() => handleModeChange('catch')}
+            disabled={isStreaming}
             role="tab"
             aria-selected={mode === 'catch'}
             className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all active:scale-95 ${
@@ -179,10 +196,10 @@ export default function Page() {
                     your file, one colorful frame at a time.
                   </p>
                   <button
-                    onClick={startCapture}
+                    onClick={handleToggleCapture}
                     className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-bold text-primary-foreground shadow-[0_5px_0_hsl(var(--primary-shadow))] transition-all hover:-translate-y-0.5 active:translate-y-1"
                   >
-                    <Camera size={17} /> Open Camera
+                    <Camera size={17} /> {isCapturing ? 'Close Camera' : 'Open Camera'}
                   </button>
                   <div className="mt-5 rounded-3xl border border-border bg-card p-4 shadow-sm">
                     <div className="mt-4 h-2 overflow-hidden rounded-full bg-muted">
@@ -213,19 +230,27 @@ export default function Page() {
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <p className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
-                  Live transmission
+                  {mode === 'send' ? 'Live transmission' : 'Live receiver'}
                 </p>
                 <p className="mt-1 text-sm font-bold">
-                  {isTransmitting ? 'Transmitting data payload...' : 'Ready to beam'}
+                  {mode === 'send'
+                    ? isTransmitting
+                      ? 'Transmitting data payload...'
+                      : 'Ready to beam'
+                    : isCapturing
+                      ? 'Scanning for data payload...'
+                      : 'Ready to receive'}
                 </p>
               </div>
               <div className="flex items-center gap-2 rounded-full bg-muted px-3 py-1.5 font-mono text-[10px] font-bold">
                 <span
                   className={`h-2 w-2 rounded-full ${
-                    isTransmitting ? 'animate-ping bg-coral' : 'bg-mint-dark'
+                    (mode === 'send' ? isTransmitting : isCapturing)
+                      ? 'animate-ping bg-coral'
+                      : 'bg-mint-dark'
                   }`}
                 />{' '}
-                {isTransmitting ? 'ACTIVE' : 'IDLE'}
+                {(mode === 'send' ? isTransmitting : isCapturing) ? 'ACTIVE' : 'IDLE'}
               </div>
             </div>
 
@@ -260,7 +285,7 @@ export default function Page() {
                   </div>
                   {!isCapturing && (
                     <div className="absolute inset-0 flex items-center justify-center font-mono text-sm text-muted-foreground/70">
-                      CAMERA STANDBY
+                      CAMERA READY
                     </div>
                   )}
                 </>
@@ -269,7 +294,8 @@ export default function Page() {
 
             <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
               <span className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-coral" /> 40 × 40 color grid
+                <span className="h-2 w-2 rounded-full bg-coral" />
+                {mode === 'send' ? '40 × 40 color grid' : 'Camera frame scanner'}
               </span>
               <button
                 onClick={handleReset}
