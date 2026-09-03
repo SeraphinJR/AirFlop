@@ -98,6 +98,7 @@ function quadScore(q: [Point, Point, Point, Point]) {
   const side = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
   const horizontalBalance = Math.min(side(q[0], q[1]), side(q[3], q[2])) / Math.max(side(q[0], q[1]), side(q[3], q[2]))
   const verticalBalance = Math.min(side(q[0], q[3]), side(q[1], q[2])) / Math.max(side(q[0], q[3]), side(q[1], q[2]))
+  if (balance < .55 || horizontalBalance < .65 || verticalBalance < .65) return -Infinity
   return minimumArea * balance * horizontalBalance * verticalBalance
 }
 function components(p: Uint8ClampedArray, w: number, h: number, colour: number) {
@@ -109,9 +110,9 @@ function components(p: Uint8ClampedArray, w: number, h: number, colour: number) 
 function matches(c: Rgb, target: Rgb) {
   const [hue, saturation, value] = hsv(c)
   const [targetHue, targetSaturation] = hsv(target)
-  if (saturation < .38 || value < .12 || saturation < targetSaturation * .42) return false
+  if (saturation < .48 || value < .16 || saturation < targetSaturation * .55) return false
   const distance = Math.abs(hue - targetHue)
-  return Math.min(distance, 360 - distance) < 28
+  return Math.min(distance, 360 - distance) < 22
 }
 function hsv([r, g, b]: Rgb) {
   const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min
