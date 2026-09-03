@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   Camera,
@@ -14,16 +14,51 @@ import {
 } from 'lucide-react'
 import { useOpticalTransmitter } from './hooks/useOpticalTransmitter'
 import { useCameraReceiver } from './hooks/useCameraReceiver'
+import { buildFrames, BYTES_PER_FRAME } from './lib/opticalFrame'
 
 export default function Page() {
   const [mode, setMode] = useState<'send' | 'catch'>('send')
   const [progress, setProgress] = useState(0)
   const [file, setFile] = useState<File | null>(null)
-  const { canvasRef, isTransmitting, startTransmission, stopTransmission } = useOpticalTransmitter()
+  const [frames, setFrames] = useState<number[][]>([])
+  const [totalFrames, setTotalFrames] = useState(0)
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const { canvasRef, isTransmitting, currentFrame, startTransmission, stopTransmission } = useOpticalTransmitter()
   const { videoRef, isCapturing, startCapture, stopCapture } = useCameraReceiver(() => {
   //Send this pixelData to a Web Worker.
   });
   const isStreaming = isTransmitting || isCapturing;
+
+  const expectedTime = totalFrames / 20
+  const timeRemaining = Math.max(0, (totalFrames - currentFrame) / 20)
+  const transmissionProgress = totalFrames > 0 ? Math.min(100, ((currentFrame + 1) / totalFrames) * 100) : 0
+
+  useEffect(() => {
+    if (countdown === null) return
+    const timeout = window.setTimeout(() => {
+      if (countdown === 1) {
+        startTransmission(frames)
+        setCountdown(null)
+      } else {
+        setCountdown(countdown - 1)
+      }
+    }, 1000)
+    return () => window.clearTimeout(timeout)
+  }, [countdown, frames, startTransmission])
+
+  async function handleFileChange(nextFile: File | null) {
+    setFile(nextFile)
+    setCountdown(null)
+    setProgress(0)
+    if (!nextFile) {
+      setFrames([])
+      setTotalFrames(0)
+      return
+    }
+    setTotalFrames(Math.ceil(nextFile.size / BYTES_PER_FRAME))
+    const data = new Uint8Array(await nextFile.arrayBuffer())
+    setFrames(buildFrames(data))
+  }
 
   function handleModeChange(nextMode: 'send' | 'catch') {
     if (nextMode === 'send') stopCapture()
@@ -37,13 +72,9 @@ export default function Page() {
     }
 
     if (!file) return
+    if (!frames.length) return
     setProgress(0)
-
-    const buffer = await file.arrayBuffer()
-    const binaryData = new Uint8Array(buffer)
-
-    // TODO: Reed-Solomon parity & framing
-    startTransmission(binaryData)
+    setCountdown(3)
   }
 
   function handleToggleCapture() {
@@ -60,6 +91,9 @@ export default function Page() {
     stopCapture()
     setProgress(0)
     setFile(null)
+    setFrames([])
+    setTotalFrames(0)
+    setCountdown(null)
   }
 
   return (
@@ -150,25 +184,40 @@ export default function Page() {
                       </span>
                       <span className="mt-1 block font-mono text-xs text-muted-foreground">
                         {file
-                          ? `${(file.size / 1024 / 1024).toFixed(2)} MB`
+                          ? `${(file.size / 1024 / 1024).toFixed(2)} MB · ${totalFrames} frames · ~${expectedTime.toFixed(1)}s`
                           : 'or click to browse your laptop'}
                       </span>
                     </span>
                     <input
                       className="sr-only"
                       type="file"
-                      onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                      onChange={(event) => void handleFileChange(event.target.files?.[0] ?? null)}
                     />
                   </label>
+                  {file && (
+                    <div className="mt-3 rounded-2xl border border-border bg-card p-3 shadow-sm">
+                      <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <motion.div
+                          className="h-full rounded-full bg-coral"
+                          animate={{ width: `${isTransmitting ? transmissionProgress : 0}%` }}
+                        />
+                      </div>
+                      <p className="mt-2 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+                        {isTransmitting ? `${Math.round(transmissionProgress)}% transmitted` : `${totalFrames} frames staged`}
+                      </p>
+                    </div>
+                  )}
                   <button
                     onClick={handleToggleBeam}
-                    disabled={!file}
+                    disabled={!file || !frames.length || countdown !== null}
                     className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-4 text-sm font-bold text-primary-foreground shadow-[0_5px_0_hsl(var(--primary-shadow))] transition-all hover:-translate-y-0.5 active:translate-y-1 disabled:opacity-60"
                   >
                     {isTransmitting ? (
                       <>
                         <Square size={17} fill="currentColor" /> Stop Beaming
                       </>
+                    ) : countdown !== null ? (
+                      <>Starting in {countdown}...</>
                     ) : (
                       <>
                         <Play size={17} fill="currentColor" /> Start Beaming{' '}
@@ -235,7 +284,7 @@ export default function Page() {
                 <p className="mt-1 text-sm font-bold">
                   {mode === 'send'
                     ? isTransmitting
-                      ? 'Transmitting data payload...'
+                      ? `Transmitting data payload · ${timeRemaining.toFixed(1)}s remaining`
                       : 'Ready to beam'
                     : isCapturing
                       ? 'Scanning for data payload...'
@@ -263,7 +312,12 @@ export default function Page() {
                     height={800}
                     className="absolute inset-0 h-full w-full object-contain"
                   />
-                  {!isTransmitting && (
+                  {countdown !== null ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 font-mono text-primary-foreground">
+                      <span className="text-xs font-bold uppercase tracking-[0.3em]">Beam starts in</span>
+                      <span className="mt-2 text-8xl font-black text-yellow">{countdown}</span>
+                    </div>
+                  ) : !isTransmitting && (
                     <div className="absolute inset-0 flex items-center justify-center text-muted-foreground/50 font-mono text-sm">
                       GRID STANDBY
                     </div>
