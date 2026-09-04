@@ -3,8 +3,8 @@ export const OPTICAL_PALETTE: readonly Rgb[] = [[139, 92, 246], [244, 63, 94], [
 export const OPTICAL_PALETTE_CSS = OPTICAL_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
 export const ANCHOR_PALETTE: readonly Rgb[] = [[255, 255, 255]]
 export const ANCHOR_PALETTE_CSS = ANCHOR_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
-export const GRID_SIZE = 16
-export const TRANSMISSION_FPS = 6
+export const GRID_SIZE = 20
+export const TRANSMISSION_FPS = 8
 export const FRAME_BLOCKS = GRID_SIZE * GRID_SIZE
 export const HEADER_ROW = 8
 export const CALIBRATION_COLUMNS = [1, 2, 3, 4] as const
