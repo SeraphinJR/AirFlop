@@ -3,19 +3,19 @@
 # AirFlop 🎯
 
 ## Basic Details
-### Team Name: VoidLink
+### Team Name: Seraphin J Raphy's Team
 
 ### Team Members
 - Team Lead: Seraphin J Raphy - Government Model Engineering College
 
 ### Project Description
-AirFlop is an air-gapped optical file transmission bridge that serializes arbitrary files into high-density 40x40 chromatic matrices on a laptop screen and reconstructs them via a phone camera at 20 FPS using client-side computer vision and forward error correction.
+AirFlop is a completely ridiculous way to send files from your laptop to your phone using a violently flashing disco grid of colors. It turns your screen into a palli perunal and your phone camera into an epilepsy patient. 
 
 ### The Problem (that doesn't exist)
-Cables tangle, cloud storage requires an internet connection, and AirDrop assumes your devices like each other. Sometimes you need to beam a 3 KB file using raw, unadulterated visual photons because radio frequencies are entirely too invisible and boring.
+Cables are annoying, Bluetooth is moody, and AirDrop only works when it feels like it. Plus, sending data over Wi-Fi is just too invisible. We needed a way to send files that you can *actually see* happening in real time, preferably with enough flashing lights to wake the whole room up.
 
 ### The Solution (that nobody asked for)
-Turn your laptop display into a chaotic, strobe-lit optical transmitter and point your smartphone camera at it. By multiplexing bytes into 2-bit color assignments, correcting perspective warp on-the-fly, and recovering dropped frames with Reed-Solomon erasure coding, we move files across an air gap using only light.
+We chop your file into tiny pieces, assign a color to every piece, and blast them onto your laptop screen as a 40x40 grid flashing 20 times a second. Just point your phone camera at this chaotic light show, and the app magically stitches the blinking colors back into your original file. It's wildly impractical, completely wireless, and an incredibly annoying way to move 3 KB of data.
 
 ## Technical Details
 ### Technologies/Components Used
@@ -44,50 +44,64 @@ npm run dev
 For Software:
 
 # Screenshots (Add at least 3)
-![Screenshot1](screenshots/transmitter.png)
+![Screenshot1](screenshots/homepage.png)
 *Laptop transmitter view showing the 40x40 chromatic matrix, alignment anchors, and real-time transmission telemetry.*
 
-![Screenshot2](screenshots/receiver.png)
+![Screenshot2](screenshots/sender.png)
 *Mobile camera viewfinder with alignment overlay, active WebRTC stream, and chunk reception progress bar.*
 
-![Screenshot3](screenshots/success.png)
+![Screenshot3](screenshots/receiver.jpeg)
 *Successful client-side reassembly, integrity verification, and automatic payload download trigger.*
 
 # Diagrams
-![Workflow](diagrams/pipeline.png)
+```mermaid
+graph TD
+    subgraph Sender [Laptop Transmitter]
+        F[Original File] --> C[Chunking & Frame 0 Manifest]
+        C --> MUX[2-bit Color Multiplexer]
+        MUX --> ASM[Frame Assembly: Anchors, Header, Clock]
+        ASM --> CAN[HTML5 Canvas @ 20 FPS]
+    end
+
+    CAN -.->|Photons / Air Gap| CAM
+
+    subgraph Receiver [Mobile Phone Camera]
+        CAM[WebRTC Capture] --> WW
+        
+        subgraph WW [Web Worker Pipeline]
+            CV[Anchor Detect & Homography Warp] --> CAL[Color Calibration & Tearing Guard]
+            CAL --> DEMUX[Demultiplex & Sequence ID Extraction]
+            DEMUX --> POOL[(Frame Memory Pool)]
+            POOL --> CHK{All Frames Received?}
+            CHK -- Yes --> DEC[Reassemble Binary Buffer]
+        end
+        
+        DEC --> DL[Reassembled Blob & Download]
+    end
+    
+    classDef sender fill:#1E293B,stroke:#334155,color:#fff;
+    classDef receiver fill:#047857,stroke:#065f46,color:#fff;
+    classDef airgap fill:none,stroke:#FB7185,stroke-width:2px,stroke-dasharray: 5 5;
+    
+    class Sender sender;
+    class Receiver receiver;
+```
 *End-to-end data pipeline: File chunking -> Reed-Solomon parity -> 2-bit color multiplexing -> 20 FPS Canvas rendering -> WebRTC frame capture -> Web Worker perspective warp & demux -> Binary reassembly.*
 
-For Hardware:
 
-# Schematic & Circuit
-![Circuit]()
-*Not applicable*
-
-![Schematic]()
-*Not applicable*
-
-# Build Photos
-![Components]()
-*Not applicable*
-
-![Build]()
-*Not applicable*
-
-![Final]()
-*Not applicable*
 
 ### Project Demo
 # Video
-[Add your demo video link here]
+(https://drive.google.com/file/d/1Qrsb4kMXuVAZQvxU7ltCn2TJmRc8MJ3G/view?usp=sharing)
+
 *Demonstration showing end-to-end optical transmission of a sample payload from laptop screen to phone camera across an air gap.*
 
-# Additional Demos
-[Add any extra demo materials/links]
+# Live Demo
+https://air-flop.vercel.app/
+
 
 ## Team Contributions
-- Seraphin J Raphy: Optical transmission engine, frame assembly logic, Web Worker decoding pipeline, and canvas render loops.
-- Simon Puthur Binu: Computer vision perspective transform, corner anchor detection algorithms, and color calibration matrix.
-- Johan Abraham: Responsive UI layout, transmission telemetry HUD, camera capture orchestration, and deployment.
+- Seraphin J Raphy: Sole developer. Architected the 2-bit color multiplexing pipeline, implemented the HTML5 Canvas transmitter, built the WebRTC camera capture orchestration, and developed the Web Worker decoding logic for perspective transform and binary reassembly.
 
 ---
 Made with ❤️ at TinkerHub Useless Projects 
