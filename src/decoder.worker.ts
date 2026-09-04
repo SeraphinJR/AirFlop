@@ -10,13 +10,12 @@ type Rejection = 'invalid dimensions' | 'no anchors' | 'invalid quadrilateral' |
 const receivedFrames = new Map<number, Uint8Array>()
 const foundFrameIds = new Set<number>()
 const counters: Record<Rejection | 'accepted unique frame', number> = { 'invalid dimensions': 0, 'no anchors': 0, 'invalid quadrilateral': 0, 'calibration failure': 0, 'ambiguous clock': 0, 'frame ID failure': 0, 'payload failure': 0, 'accepted unique frame': 0 }
-let manifest: Manifest | null = null, decoding = false, complete = false, scanned = 0, detectedFrames = 0
-const pending = new Map<number, Uint8Array>()
+let manifest: Manifest | null = null, decoding = false, complete = false, scanned = 0, detectedFrames = 0, pending: { id: number; payload: Uint8Array } | null = null
 let frameQueue: FrameMessage[] = [], processingQueue = false
 
 self.onmessage = event => {
   const data = event.data as DecoderMessage
-  if ('type' in data) { receivedFrames.clear(); foundFrameIds.clear(); manifest = null; decoding = complete = false; scanned = detectedFrames = 0; pending.clear(); frameQueue = []; Object.keys(counters).forEach(key => { counters[key as keyof typeof counters] = 0 }); return }
+  if ('type' in data) { receivedFrames.clear(); foundFrameIds.clear(); manifest = null; decoding = complete = false; scanned = detectedFrames = 0; pending = null; frameQueue = []; Object.keys(counters).forEach(key => { counters[key as keyof typeof counters] = 0 }); return }
   frameQueue.push(data)
   void processQueue()
 }
@@ -54,11 +53,11 @@ async function processFrame({ pixels, width = 400, height = 400 }: FrameMessage)
   }
   detectedFrames += 1
   postDebug('Anchors and calibration detected', anchors)
-  // A repeat proves that the camera saw the same stable frame twice. Keep the first
-  // valid sample by ID so a refresh transition or worker delay does not lose it.
-  const previousPayload = pending.get(id)
-  if (!previousPayload) { pending.set(id, payload); postDebug(); return }
-  pending.delete(id)
+  // A repeat proves that the camera did not sample a refresh transition. Payload is
+  // accepted from the second read because camera noise can change borderline payload
+  // colors even when the display is still showing the same frame.
+  if (!pending || pending.id !== id) { pending = { id, payload }; postDebug(); return }
+  pending = null
   if (manifest && (id < 0 || id > manifest.payloadFrameCount)) {
     postDebug(`Discarded out-of-range frame ID ${id}`, anchors)
     return
