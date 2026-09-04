@@ -45,13 +45,18 @@ For Software:
 
 # Screenshots (Add at least 3)
 ![Screenshot1](screenshots/homepage.png)
-*Laptop transmitter view showing the 40x40 chromatic matrix, alignment anchors, and real-time transmission telemetry.*
+*Home Page with both Sender and Receiver options*
+
+
 
 ![Screenshot2](screenshots/sender.png)
-*Mobile camera viewfinder with alignment overlay, active WebRTC stream, and chunk reception progress bar.*
+*Laptop transmitting the file*
+
+
 
 ![Screenshot3](screenshots/receiver.jpeg)
-*Successful client-side reassembly, integrity verification, and automatic payload download trigger.*
+
+*Receiving the file by recording the sender screen*
 
 # Diagrams
 ```mermaid
@@ -86,7 +91,7 @@ graph TD
     class Sender sender;
     class Receiver receiver;
 ```
-*End-to-end data pipeline: File chunking -> Reed-Solomon parity -> 2-bit color multiplexing -> 20 FPS Canvas rendering -> WebRTC frame capture -> Web Worker perspective warp & demux -> Binary reassembly.*
+*End-to-end data pipeline: File chunking -> 2-bit color multiplexing -> 20 FPS Canvas rendering -> WebRTC frame capture -> Web Worker perspective warp & demux -> Binary reassembly.*
 
 
 
