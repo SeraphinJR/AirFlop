@@ -1,4 +1,4 @@
-import { BYTES_PER_FRAME, CALIBRATION_COLUMNS, DATA_SHARDS_PER_GROUP, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, PARITY_SHARDS_PER_GROUP, type Rgb } from './lib/opticalFrame'
+import { BYTES_PER_FRAME, CALIBRATION_COLUMNS, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, type Rgb } from './lib/opticalFrame'
 
 type Point = { x: number; y: number }
 type Homography = readonly [number, number, number, number, number, number, number, number]
@@ -92,23 +92,20 @@ async function accept(id: number, payload: Uint8Array) {
 function parseManifest(payload: Uint8Array): Manifest | null {
   if (payload[0] !== 0x41 || payload[1] !== 0x49 || payload[2] !== 0x52 || payload[3] !== 0x46) return null
   const v = new DataView(payload.buffer, payload.byteOffset, payload.byteLength), payloadFrameCount = v.getUint16(8, false), extensionLength = payload[10]
-  if (extensionLength > BYTES_PER_FRAME - 11 || payloadFrameCount % (DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP)) return null
+  if (extensionLength > BYTES_PER_FRAME - 11) return null
   return { fileSize: v.getUint32(4, false), payloadFrameCount, extension: new TextDecoder().decode(payload.subarray(11, 11 + extensionLength)) }
 }
 async function tryComplete() {
   if (!manifest || decoding) return
   if (receivedFrames.size !== manifest.payloadFrameCount + 1) return
-  const shardsPerGroup = DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP, groups = manifest.payloadFrameCount / shardsPerGroup
-  for (let group = 0; group < groups; group += 1) { let count = 0; for (let shard = 0; shard < shardsPerGroup; shard += 1) if (receivedFrames.has(group * shardsPerGroup + shard + 1)) count += 1; if (count < DATA_SHARDS_PER_GROUP) return }
+  const dataFrameCount = manifest.payloadFrameCount
   decoding = true
   try {
-    const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME)
-    for (let group = 0; group < groups; group += 1) {
-      for (let shard = 0; shard < DATA_SHARDS_PER_GROUP; shard += 1) {
-        const frame = receivedFrames.get(group * shardsPerGroup + shard + 1)
-        if (!frame) throw new Error(`Missing data frame ${group * shardsPerGroup + shard + 1}.`)
-        output.set(frame, (group * DATA_SHARDS_PER_GROUP + shard) * BYTES_PER_FRAME)
-      }
+    const output = new Uint8Array(dataFrameCount * BYTES_PER_FRAME)
+    for (let frameIndex = 0; frameIndex < dataFrameCount; frameIndex += 1) {
+      const frame = receivedFrames.get(frameIndex + 1)
+      if (!frame) throw new Error(`Missing data frame ${frameIndex + 1}.`)
+      output.set(frame, frameIndex * BYTES_PER_FRAME)
     }
     complete = true
     self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(new Blob([output.slice(0, manifest.fileSize)])), filename: manifest.extension ? `reconstructed.${manifest.extension.replace(/^\\.+/, '')}` : 'reconstructed' })

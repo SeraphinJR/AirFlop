@@ -1,6 +1,3 @@
-import { ReedSolomonErasure } from './reedSolomon'
-import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
-
 export type Rgb = readonly [number, number, number]
 export const OPTICAL_PALETTE: readonly Rgb[] = [[139, 92, 246], [244, 63, 94], [20, 184, 166], [250, 204, 21]]
 export const OPTICAL_PALETTE_CSS = OPTICAL_PALETTE.map(([r, g, b]) => `rgb(${r} ${g} ${b})`)
@@ -29,10 +26,6 @@ export function isReservedCell(row: number, column: number) {
 }
 export const PAYLOAD_BLOCKS_PER_FRAME = Array.from({ length: FRAME_BLOCKS }, (_, index) => index).filter(index => !isReservedCell(Math.floor(index / GRID_SIZE), index % GRID_SIZE)).length
 export const BYTES_PER_FRAME = Math.floor(PAYLOAD_BLOCKS_PER_FRAME / 4)
-export const DATA_SHARDS_PER_GROUP = 4
-export const PARITY_SHARDS_PER_GROUP = 1
-let reedSolomonPromise: Promise<ReedSolomonErasure> | undefined
-function getReedSolomon() { reedSolomonPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl)); return reedSolomonPromise }
 export function bytesToColorIndices(chunk: Uint8Array): number[] { const indices: number[] = []; for (const byte of chunk) indices.push((byte >> 6) & 3, (byte >> 4) & 3, (byte >> 2) & 3, byte & 3); return indices }
 export function buildFrame(payloadIndices: number[], frameId: number): number[] {
   const frame = new Array<number>(FRAME_BLOCKS).fill(0); const cell = (row: number, column: number) => row * GRID_SIZE + column
@@ -50,11 +43,11 @@ function buildManifest(fileSize: number, payloadFrameCount: number, extension: s
   const view = new DataView(manifest.buffer); manifest.set([0x41, 0x49, 0x52, 0x46]); view.setUint32(4, fileSize, false); view.setUint16(8, payloadFrameCount, false); manifest[10] = extensionBytes.length; manifest.set(extensionBytes, 11); return manifest
 }
 export async function buildTransmissionFrames(data: Uint8Array, extension: string): Promise<number[][]> {
-  const dataFrameCount = Math.ceil(data.length / BYTES_PER_FRAME); const groupCount = Math.ceil(dataFrameCount / DATA_SHARDS_PER_GROUP); const payloadFrameCount = groupCount * (DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP)
+  const dataFrameCount = Math.ceil(data.length / BYTES_PER_FRAME); const payloadFrameCount = dataFrameCount
   if (payloadFrameCount > 0xffff) throw new Error('File is too large for the 16-bit payload frame count.')
   const frames = [buildFrame(bytesToColorIndices(buildManifest(data.length, payloadFrameCount, extension)), 0)]
-  if (!groupCount) return frames
-  const reedSolomon = await getReedSolomon(); const shardsPerGroup = DATA_SHARDS_PER_GROUP + PARITY_SHARDS_PER_GROUP
-  for (let group = 0; group < groupCount; group += 1) { const shards = new Uint8Array(BYTES_PER_FRAME * shardsPerGroup); for (let shard = 0; shard < DATA_SHARDS_PER_GROUP; shard += 1) shards.set(data.subarray((group * DATA_SHARDS_PER_GROUP + shard) * BYTES_PER_FRAME, (group * DATA_SHARDS_PER_GROUP + shard + 1) * BYTES_PER_FRAME), shard * BYTES_PER_FRAME); if (reedSolomon.encode(shards, DATA_SHARDS_PER_GROUP, PARITY_SHARDS_PER_GROUP) !== ReedSolomonErasure.RESULT_OK) throw new Error('Reed-Solomon encoding failed.'); for (let shard = 0; shard < shardsPerGroup; shard += 1) frames.push(buildFrame(bytesToColorIndices(shards.subarray(shard * BYTES_PER_FRAME, (shard + 1) * BYTES_PER_FRAME)), frames.length)) }
+  for (let frameIndex = 0; frameIndex < dataFrameCount; frameIndex += 1) {
+    frames.push(buildFrame(bytesToColorIndices(data.subarray(frameIndex * BYTES_PER_FRAME, (frameIndex + 1) * BYTES_PER_FRAME)), frames.length))
+  }
   return frames
 }
