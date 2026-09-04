@@ -172,7 +172,7 @@ export default function Page() {
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
               Optical Data
             </p>
-            <p className="text-base font-bold tracking-tight">Bridge</p>
+            <p className="text-base font-bold tracking-tight">AirFlop</p>
           </div>
         </div>
         <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-xs font-semibold shadow-sm">
@@ -226,7 +226,7 @@ export default function Page() {
                   transition={{ duration: 0.25 }}
                 >
                   <p className="mb-4 font-mono text-xs font-bold uppercase tracking-[0.18em] text-coral">
-                    Laptop transmitter
+                    AirFlop
                   </p>
                   <h1 className="max-w-xl text-balance text-5xl font-black leading-[0.98] tracking-[-0.06em] md:text-7xl">
                     Send files through{' '}
@@ -301,13 +301,13 @@ export default function Page() {
                   transition={{ duration: 0.25 }}
                 >
                   <p className="mb-4 font-mono text-xs font-bold uppercase tracking-[0.18em] text-mint-dark">
-                    Phone receiver
+                    Receiver
                   </p>
                   <h1 className="max-w-xl text-balance text-5xl font-black leading-[0.98] tracking-[-0.06em] md:text-7xl">
                     Catch the <span className="text-mint-dark">light.</span>
                   </h1>
                   <p className="mt-4 max-w-md text-pretty text-base leading-7 text-muted-foreground">
-                    Point your camera at the sender's grid and let Bridge rebuild
+                    Point your camera at the sender's grid and let AirFlop rebuild
                     your file, one colorful frame at a time.
                   </p>
                   <button
