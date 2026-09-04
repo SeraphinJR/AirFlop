@@ -1,5 +1,3 @@
-import { ReedSolomonErasure } from './lib/reedSolomon'
-import reedSolomonWasmUrl from '@subspace/reed-solomon-erasure.wasm/dist/reed_solomon_erasure_bg.wasm?url'
 import { BYTES_PER_FRAME, CALIBRATION_COLUMNS, DATA_SHARDS_PER_GROUP, FINDER_CENTRES, FRAME_CLOCK_COLUMN, FRAME_ID_COLUMNS, GRID_SIZE, HEADER_ROW, isReservedCell, PARITY_SHARDS_PER_GROUP, type Rgb } from './lib/opticalFrame'
 
 type Point = { x: number; y: number }
@@ -14,7 +12,6 @@ const foundFrameIds = new Set<number>()
 const counters: Record<Rejection | 'accepted unique frame', number> = { 'invalid dimensions': 0, 'no anchors': 0, 'invalid quadrilateral': 0, 'calibration failure': 0, 'ambiguous clock': 0, 'frame ID failure': 0, 'payload failure': 0, 'accepted unique frame': 0 }
 let manifest: Manifest | null = null, decoding = false, complete = false, scanned = 0, detectedFrames = 0, pending: { id: number; payload: Uint8Array } | null = null
 let frameQueue: FrameMessage[] = [], processingQueue = false
-let rsPromise: Promise<ReedSolomonErasure> | undefined
 
 self.onmessage = event => {
   const data = event.data as DecoderMessage
@@ -105,18 +102,13 @@ async function tryComplete() {
   for (let group = 0; group < groups; group += 1) { let count = 0; for (let shard = 0; shard < shardsPerGroup; shard += 1) if (receivedFrames.has(group * shardsPerGroup + shard + 1)) count += 1; if (count < DATA_SHARDS_PER_GROUP) return }
   decoding = true
   try {
-    const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), rs = await getRs()
+    const output = new Uint8Array(groups * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME)
     for (let group = 0; group < groups; group += 1) {
-      const shards = new Uint8Array(shardsPerGroup * BYTES_PER_FRAME), available: boolean[] = []
-      for (let shard = 0; shard < shardsPerGroup; shard += 1) {
+      for (let shard = 0; shard < DATA_SHARDS_PER_GROUP; shard += 1) {
         const frame = receivedFrames.get(group * shardsPerGroup + shard + 1)
-        available.push(Boolean(frame))
-        if (frame) shards.set(frame, shard * BYTES_PER_FRAME)
+        if (!frame) throw new Error(`Missing data frame ${group * shardsPerGroup + shard + 1}.`)
+        output.set(frame, (group * DATA_SHARDS_PER_GROUP + shard) * BYTES_PER_FRAME)
       }
-      if (rs.reconstruct(shards, DATA_SHARDS_PER_GROUP, PARITY_SHARDS_PER_GROUP, available) !== ReedSolomonErasure.RESULT_OK) {
-        throw new Error(`Reconstruction failed for group ${group + 1}.`)
-      }
-      output.set(shards.subarray(0, DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME), group * DATA_SHARDS_PER_GROUP * BYTES_PER_FRAME)
     }
     complete = true
     self.postMessage({ type: 'COMPLETE', blobUrl: URL.createObjectURL(new Blob([output.slice(0, manifest.fileSize)])), filename: manifest.extension ? `reconstructed.${manifest.extension.replace(/^\\.+/, '')}` : 'reconstructed' })
@@ -126,7 +118,6 @@ async function tryComplete() {
     decoding = false
   }
 }
-function getRs() { rsPromise ??= ReedSolomonErasure.fromResponse(fetch(reedSolomonWasmUrl)); return rsPromise }
 function sameManifest(a: Manifest, b: Manifest) { return a.fileSize === b.fileSize && a.payloadFrameCount === b.payloadFrameCount && a.extension === b.extension }
 
 function findAnchors(p: Uint8ClampedArray, w: number, h: number): [Point, Point, Point, Point] | null {
